@@ -71,11 +71,11 @@ kassi warm-k6
 # the endpoint from the app. The npx-based stdio bridge needs Node.js.
 ```
 
-Plan slot-filling uses a local [Ollama](https://ollama.com) model by default (default
-`qwen2.5-coder:7b`). Set `KASSI_LLM=anthropic` to use the Claude Messages API instead
-(default `claude-haiku-4-5`, needs `ANTHROPIC_API_KEY`). Either way the model only picks
-from a closed-enum plan; it never writes k6 source or SPL, and if the backend is
-unreachable kassi falls back to a default plan.
+The model authors the k6 script (on top of the deterministic scaffold) and narrates the
+run; it never writes SPL. A local [Ollama](https://ollama.com) model is used by default
+(`qwen2.5-coder:7b`); set `KASSI_LLM=anthropic` to use the Claude Messages API instead
+(`claude-haiku-4-5`, needs `ANTHROPIC_API_KEY`). If the backend is unreachable, kassi runs
+the deterministic scaffold and falls back to the static omens for the narration.
 
 The Splunk step is optional: without `KASSI_SPLUNK_MCP_ENDPOINT` + `KASSI_SPLUNK_TOKEN`
 set, kassi skips correlation and runs k6-only.
@@ -119,7 +119,7 @@ kassi verify <app-id>        # confirm the ledger has not been tampered with
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `KASSI_LLM` | `ollama` | plan slot-filling backend: `ollama` or `anthropic` |
+| `KASSI_LLM` | `ollama` | model backend for script authoring + narration: `ollama` or `anthropic` |
 | `KASSI_MODEL` | `qwen2.5-coder:7b` / `claude-haiku-4-5` | model tag (Ollama tag, or Claude model id when `KASSI_LLM=anthropic`) |
 | `OLLAMA_HOST` | `http://localhost:11434` | Ollama endpoint (when `KASSI_LLM=ollama`) |
 | `ANTHROPIC_API_KEY` | unset | Claude API key (when `KASSI_LLM=anthropic`) |
@@ -151,11 +151,12 @@ stateDiagram-v2
     extract_endpoints --> doc_lookup
     parse_intent --> doc_lookup
     parse_intent --> report: failed
-    doc_lookup --> generate_script
+    doc_lookup --> scaffold
+    scaffold --> generate_script
+    scaffold --> report: no endpoints
     generate_script --> validate_script
-    generate_script --> report: no endpoints
     validate_script --> generate_script: retry
-    validate_script --> run_test: valid
+    validate_script --> run_test: valid / scaffold
     validate_script --> report: gave up
     run_test --> splunk_preflight: splunk enabled
     run_test --> report: k6-only / failed
@@ -170,13 +171,17 @@ stateDiagram-v2
   `get_documentation`) for the constructs kassi emits (HTTP requests, thresholds,
   checks, scenarios) and records version-grounded citations. It is non-blocking:
   generation proceeds even if the docs are unavailable.
-- `generate_script` fills a typed `Plan` (test taxonomy, parameterization,
-  per-endpoint emphasis) with the LLM, then pure Python composes a single
-  self-contained k6 script. A single file is required: the k6 MCP runs one script
-  string and cannot resolve local imports, so kassi emits plain `k6/http` calls with
-  sample request data derived from the OpenAPI schema.
+- `scaffold` composes a deterministic, self-contained k6 baseline from the OpenAPI
+  schema (per-endpoint requests with sample bodies, the baked base URL, load options).
+  No model. A single file is required: the k6 MCP runs one script string and cannot
+  resolve local imports, so kassi emits plain `k6/http` calls. This scaffold is the
+  known-good fallback.
+- `generate_script` has the model author the final script on top of the scaffold,
+  guided by k6's own `generate_script` MCP prompt and `best_practices` resource. If the
+  model is unavailable or its output keeps failing validation, kassi runs the scaffold.
 - `validate_script` and `run_test` call the k6 MCP `validate_script` / `run_script`
-  tools through `call_upstream`. `run_test` records the wall-clock test window.
+  tools through `call_upstream`. `run_test` records the wall-clock test window. The
+  retry loop is bounded; on give-up it runs the deterministic scaffold rather than fail.
 - `splunk_preflight` verifies the target index exists and captures its event count,
   sourcetypes, and the Splunk version (`splunk_get_info` / `splunk_get_index_info` /
   `splunk_get_metadata`) before correlating. It catches the "wrong index, zero rows"
@@ -184,10 +189,10 @@ stateDiagram-v2
 - `correlate` calls the Splunk MCP `splunk_run_query` tool with an SPL rollup scoped
   to that window (override per run with `splunk_spl`), so a client-side regression can
   be tied to server-side errors and latency.
-- Every upstream tool call is logged to `mcp_provenance` in the report, so the run
-  shows exactly which k6 and Splunk MCP tools the agent invoked. The validation retry
-  loop is bounded; on give-up kassi reports the failure instead of running a broken
-  script. Both MCP-native phases degrade gracefully when a tool or server is absent.
+- `report` has the model narrate the run as a tarot reading, one line per phase from
+  the recorded facts, falling back to the static omens when the model is absent. Every
+  upstream tool call is logged to `mcp_provenance`. The work-phases stay deterministic;
+  the model authors only the script and the narration.
 
 ## The Major Arcana
 
@@ -200,7 +205,8 @@ Each phase is a card the agent turns. Run `kassi arcana` for the full spread.
 | The Emperor (IV) | `extract_endpoints` | order from change: the routes are named |
 | The Empress (III) | `parse_intent` | intuition reads the intent into endpoints |
 | The Hierophant (V) | `doc_lookup` | doctrine consulted: the k6 docs ground the rite |
-| The Magician (I) | `generate_script` | as above, so below: the load test is manifested |
+| The Chariot (VII) | `scaffold` | the vehicle is assembled from the spec: a runnable scaffold takes shape |
+| The Magician (I) | `generate_script` | as above, so below: the agent authors the script atop the scaffold |
 | Justice (XI) | `validate_script` | the script is weighed; the unworthy is turned back |
 | The Tower (XVI) | `run_test` | load strikes the structure; what breaks is revealed |
 | The Hermit (IX) | `splunk_preflight` | a lantern into the index before the reading |
@@ -217,35 +223,39 @@ the petstore intent through `report`, with `correlate` calling the official
 `splunk_run_query` tool over the `mcp-remote` bridge:
 
 ```console
-$ uv run python scripts/verify_correlate_live.py
+$ KASSI_LLM=anthropic uv run python scripts/verify_correlate_live.py
 splunk upstream: OFFICIAL Splunk MCP Server (from .env)
+... scaffold_done endpoints=3
 ... splunk_preflight_done exists=True index=web sourcetypes=1
-... correlate_done rows=1 status=ok
 verdict:          passed
-splunk_enabled:   True
+scaffold plan:    taxonomy=load parameterization=static_examples endpoints=3 (deterministic)
 k6 http_reqs:     200
-correlation SPL:  search index=web earliest=1781191533 latest=1781191537 | stats ...
-correlation OK:   True
 server-side rows: [{"total_events": "80", "server_errors": "7",
                     "client_errors": "3", "avg_response_ms": "21.25"}]
-k6 doc refs:      ['using-k6/http-requests', 'using-k6/thresholds',
-                   'using-k6/checks', 'using-k6/scenarios']
-splunk preflight: index=web exists=True events=720 sourcetypes=['access_json'] splunk=10.4.0
 mcp tool calls:   ['k6.list_sections=ok', 'k6.get_documentation=ok' (x4),
-                   'k6.validate_script=ok', 'k6.run_script=ok',
+                   'k6.generate_script(prompt)=ok', 'k6.validate_script=ok', 'k6.run_script=ok',
                    'splunk.splunk_get_info=ok', 'splunk.splunk_get_index_info=ok',
                    'splunk.splunk_get_metadata=ok', 'splunk.splunk_run_query=ok']
+the reading:
+    The Fool: Intent mode selected across 3 endpoints.
+    The Hierophant: Consulted k6 documentation on requests, thresholds, checks, scenarios.
+    The Chariot: Deterministic load scaffold constructed.
+    The Magician: Script authored and passed validation.
+    The Tower: 200 requests executed; p95 21.4 ms, 0.06% failure rate.
+    The Hermit: Splunk web index confirmed with 1440 events.
+    The Lovers: Server aggregation revealed 80 total events, 7 errors, 21.25 ms average.
+    Judgement: Load test verdict passed.
 ```
 
 What this proves: one agent drove every workflow step legally and orchestrated
-**11 tool calls across both MCP servers**. `doc_lookup` grounded generation in the live
-k6 docs; `splunk_preflight` confirmed the `web` index against the **live** official
-Splunk MCP Server (720 events, `access_json` sourcetype, Splunk 10.4.0); `run_test`
-returned 200 client-side k6 requests (p95 21.4 ms, 6% failed); and `correlate` queried
-Splunk with SPL scoped to the exact test window and read back the server-side truth,
-80 events with 7 5xx and 3 4xx at 21.25 ms average. The client-side failure rate is
-explained by server-side errors, correlated automatically over one window, with every
-upstream call recorded to the ledger and surfaced in `mcp_provenance`.
+**12 tool calls across both MCP servers**. `scaffold` built a deterministic baseline, then
+`generate_script` authored the final script using k6's own `generate_script` MCP prompt
+(grounded by the `doc_lookup` refs); `splunk_preflight` confirmed the `web` index against
+the **live** official Splunk MCP Server; `run_test` returned 200 client-side k6 requests
+(p95 21.4 ms, 6% failed); `correlate` read back the server-side truth, 80 events with
+7 5xx and 3 4xx at 21.25 ms average; and `report` had Claude Haiku narrate each phase as a
+tarot reading. The client-side failure rate is explained by server-side errors, correlated
+over one window, with every upstream call on the ledger and in `mcp_provenance`.
 
 In this reproduction the k6 client metrics are canned so the k6 MCP server need not be
 installed, while telemetry is ingested into live Splunk over the run window and the

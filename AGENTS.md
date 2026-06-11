@@ -31,20 +31,20 @@ Experience). Targets the Best Use of Splunk MCP Server bonus prize.
 src/kassi/
   __init__.py        exports build_application
   app.py             THE FSM: async @action functions + build_application() + mount();
-                     includes doc_lookup + splunk_preflight MCP-native phases
+                     doc_lookup, scaffold, generate_script, splunk_preflight, report-narration
   cli.py             `kassi` console command (Theodosia build_cli); loads .env; warm-k6
   upstream.py        k6 + splunk upstream MCP configs; splunk_configured()
+  k6gen.py           fetch_k6_generation_guidance(): k6 MCP generate_script prompt + best_practices
   state.py           Pydantic models (Endpoint, RunResult); MAX_FIX_ATTEMPTS
-  parse.py           pure helpers: diff->endpoints, intent scoring, SPL builder,
-                     k6 doc + Splunk index/metadata/payload parsers
+  parse.py           pure helpers: diff->endpoints, intent scoring, SPL builder, k6 doc +
+                     Splunk parsers, extract_script + build_generation_description
   llm.py             OllamaLLM + AnthropicLLM clients, LLM Protocol, make_llm() factory
   arcana.py          theming only: phase -> Major Arcana card; kept out of state/report
   githost.py         git diff via subprocess (the only non-MCP shell-out kassi keeps)
   codegen/
-    __init__.py      exports compose, fill_plan, Plan, slots
-    slots.py         the closed-enum Plan (TestTaxonomy, Parameterization, flags)
-    plan.py          fill_plan(): one LLM call -> validated Plan, falls back to default
-    compose.py       pure-Python composer -> a single self-contained k6 script
+    __init__.py      exports compose, Plan, default_plan, slots
+    slots.py         the typed Plan (TestTaxonomy, Parameterization, flags) + default_plan()
+    compose.py       pure-Python composer -> a single self-contained k6 scaffold
 tests/test_fsm.py    offline FSM tests (FakeUpstream + fake LLM)
 examples/petstore/   sample openapi.json for intent mode + tests
 scripts/             local Splunk helpers (see docs/SPLUNK_SETUP.md)
@@ -63,15 +63,19 @@ The state machine lives entirely in `app.py`. Flow:
 
 ```
 select_mode ─diff──→ read_diff → extract_endpoints ┐
-            └intent─→ parse_intent ────────────────┴→ doc_lookup → generate_script
+            └intent─→ parse_intent ────────────────┴→ doc_lookup → scaffold → generate_script
 generate_script → validate_script ⇄ (retry) generate_script
 validate_script → run_test ─splunk?─→ splunk_preflight → correlate → report
                           └─else──────────────────────────────────→ report   (also on validation give-up)
 ```
 
+`scaffold` composes a deterministic k6 baseline (no model); `generate_script` has the model
+author the final script on top of it using k6's `generate_script` MCP prompt (fetched via
+`k6gen.py`), falling back to the scaffold when the model is absent or validation gives up.
 `doc_lookup` (k6 docs) and `splunk_preflight` (Splunk index/metadata/info) are MCP-native
 phases: both use `safe_upstream` (never block the run) and append to the `mcp_calls`
-provenance list that `report` surfaces as `mcp_provenance`.
+provenance list that `report` surfaces as `mcp_provenance`. `report` also has the model
+narrate the run (a tarot reading), falling back to the static omens when the model is absent.
 
 Control flow is driven by a single `stage` string in state, plus a few flags
 (`mode`, `splunk_enabled`, `fix_attempts`). Transitions are gated with
@@ -107,21 +111,22 @@ Theodosia's `kassi doctor --runtime` enforces most of these; run it after edits.
 
 ## Codegen invariants (do not break these)
 
-- **The generated k6 script must be a single self-contained file.** The k6 MCP
+- **The k6 script must be a single self-contained file.** The k6 MCP
   `run_script`/`validate_script` tools take one `script` string and cannot resolve
   local imports. `compose.py` emits plain `k6/http` calls with inlined `options` and
-  `handleSummary`. Do not reintroduce an imported client or aux files (this is why
-  the original `@grafana/openapi-to-k6` substrate was dropped).
-- **The LLM only fills the closed-enum `Plan`** (test taxonomy, parameterization,
-  per-endpoint emphasis flags). It never authors k6 source or SPL. Pure Python in
-  `compose.py` (script) and `parse.build_correlation_spl` (SPL) does the writing.
-  Keep generation deterministic; if you need a new knob, add an enum to `slots.py`,
-  not a free-text LLM field.
-- `fill_plan` must stay non-load-bearing: on any LLM/parse failure it falls back to a
-  default plan built from the endpoints. The pipeline must work with the LLM backend
-  (Ollama or Anthropic) unreachable.
-- Sample request data is derived best-effort from the OpenAPI schema. It only has to
-  exercise the endpoint shape, not be semantically perfect.
+  `handleSummary`; the `generate_script` prompt tells the model to keep it one file.
+  Do not reintroduce an imported client or aux files (this is why the original
+  `@grafana/openapi-to-k6` substrate was dropped).
+- **`scaffold` is the deterministic safety net.** It composes a runnable script from
+  the OpenAPI schema with a default load `Plan`, no model. `generate_script` then has
+  the model author the final script on top of it (the model authors k6 source now, a
+  deliberate change), guided by k6's own `generate_script` MCP prompt. On model
+  absence, empty output, or validation give-up, the pipeline runs the scaffold. So the
+  pipeline must always work with the model backend (Ollama or Anthropic) unreachable.
+- **The model never writes SPL.** `parse.build_correlation_spl` composes the
+  correlation query in pure Python; keep it that way.
+- Sample request data in the scaffold is derived best-effort from the OpenAPI schema.
+  It only has to exercise the endpoint shape, not be semantically perfect.
 
 ## Upstream MCP servers and config
 
@@ -134,8 +139,10 @@ and classifies the result). The driving agent never sees these servers.
   (k6 2.0+, provisioned on first run; `kassi warm-k6` warms the cache).
   `KASSI_K6_CMD=mcp-k6` selects the standalone binary; `KASSI_K6_DOCKER=1` runs
   via Docker. All three speak stdio and expose the same tools, so codegen and parsers
-  are unaffected. kassi calls four k6 tools: `list_sections` + `get_documentation`
-  (doc_lookup), `validate_script`, `run_script`.
+  are unaffected. kassi uses the k6 `list_sections` + `get_documentation` tools
+  (doc_lookup), `validate_script` + `run_script` tools, and the `generate_script` prompt
+  + `docs://k6/best_practices` resource (fetched in `k6gen.py` with a short-lived fastmcp
+  client, since theodosia's upstream API calls tools only).
 - **splunk** is configured only when `KASSI_SPLUNK_MCP_ENDPOINT` and
   `KASSI_SPLUNK_TOKEN` are set. `select_mode` records `splunk_enabled =
   splunk_configured()`; the graph branches on it, and both `splunk_preflight` and
@@ -181,8 +188,9 @@ SIM). There is no mypy gate; keep type hints accurate anyway.
 `tests/test_fsm.py` runs fully offline:
 - Theodosia's `theodosia.testing.FakeUpstream` fakes both k6 and Splunk MCP servers
   (responses keyed by `{server: {tool: payload}}`).
-- a `_FakeLLM` returns a canned Plan JSON, and an autouse fixture monkeypatches
-  `kassi.app.make_llm`.
+- a `_FakeLLM` returns a canned k6 script (and a narration when the prompt is the
+  narrator), and an autouse fixture monkeypatches `kassi.app.make_llm` plus
+  `kassi.app.fetch_k6_generation_guidance` (so tests never spawn k6 for the prompt).
 - the happy-path test drives the Burr app directly with `await app.arun(...)`;
   the enforcement test mounts the server and calls the `step` tool through a
   `fastmcp.Client` to assert an `invalid_transition` refusal.

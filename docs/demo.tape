@@ -50,8 +50,8 @@ Enter
 Sleep 800ms
 Type "./scripts/divine.sh"
 Enter
-Sleep 12s
+Sleep 22s
 
-Type "# one agent, 11 tool calls across two MCP servers -- client 5xx explained by server-side telemetry, every step on the ledger"
+Type "# one agent, 12 tool calls across two MCP servers -- client 5xx explained by server-side telemetry, narrated as a tarot reading"
 Enter
 Sleep 3s

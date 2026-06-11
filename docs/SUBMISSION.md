@@ -28,24 +28,25 @@ change (a git diff) or a plain-language intent and it:
 1. picks the affected HTTP endpoints, from the diff or by scoring an OpenAPI spec against
    the intent,
 2. consults the k6 MCP documentation tools to ground the test in the live k6 API,
-3. generates a self-contained k6 load test, validates and runs it through the Grafana k6
-   MCP server,
+3. composes a deterministic k6 scaffold from the OpenAPI schema, then has the model author
+   the final script on top of it using k6's own `generate_script` MCP prompt, and validates
+   and runs it through the Grafana k6 MCP server,
 4. preflights the Splunk index (existence, event count, sourcetypes, version), then
    queries Splunk through the official Splunk MCP Server for the target's server-side
    telemetry over the exact test window, and
-5. reports a combined client plus server verdict with a provenance record of every
-   upstream tool call.
+5. reports a combined client plus server verdict, with the model narrating each phase as a
+   tarot reading and a provenance record of every upstream tool call.
 
 The driving agent (Claude Code, Cursor, any MCP client) never sees k6 or Splunk. It sees
 one tool, `step(action, inputs)`, and takes the workflow one move at a time.
 
-In a verified run against live Splunk, one agent orchestrated 11 tool calls across both
-MCP servers: it grounded generation in the live k6 docs, confirmed the `web` index on the
-official Splunk MCP Server (720 events, `access_json` sourcetype, Splunk 10.4.0), reported
-200 client-side k6 requests (p95 21.4 ms, 6% failed), then correlated them to 80
-server-side events over the test window with 7 5xx and 3 4xx at 21.25 ms average. The
-client failure rate is explained by server-side errors, correlated automatically, with
-every tool call on an audit ledger.
+In a verified run against live Splunk, one agent orchestrated 12 tool calls across both
+MCP servers: it grounded generation in the live k6 docs, authored the script with k6's own
+`generate_script` prompt, confirmed the `web` index on the official Splunk MCP Server
+(`access_json` sourcetype, Splunk 10.4.0), reported 200 client-side k6 requests (p95
+21.4 ms, 6% failed), then correlated them to 80 server-side events over the test window with
+7 5xx and 3 4xx at 21.25 ms average. The client failure rate is explained by server-side
+errors, correlated automatically, with every tool call on an audit ledger.
 
 ## How we built it
 
@@ -55,13 +56,13 @@ every tool call on an audit ledger.
   and every refusal is written to an immutable, hash-chained ledger. `kassi verify` proves
   the audit trail was not tampered with. Autonomy is governable by construction, which is
   what makes the agent safe to run unattended on ops infrastructure.
-- **Two MCP upstreams from one agent, nine tools.** Theodosia spawns the Grafana k6 MCP
-  server and the official Splunk MCP Server as hidden stdio upstreams. Action bodies reach
-  them with `call_upstream(server, tool, args)`. Beyond running the test, the agent uses
-  the k6 documentation tools (`list_sections`, `get_documentation`) to ground generation,
-  and the Splunk metadata tools (`splunk_get_info`, `splunk_get_index_info`,
-  `splunk_get_metadata`) to preflight the index. Every call is recorded to an
-  `mcp_provenance` block so the run shows exactly which upstream tools were invoked. With
+- **Two MCP upstreams from one agent, deep usage.** Theodosia spawns the Grafana k6 MCP
+  server and the official Splunk MCP Server as hidden stdio upstreams. The agent uses the
+  k6 documentation tools (`list_sections`, `get_documentation`) to ground generation, k6's
+  own `generate_script` prompt and `best_practices` resource to author the script, the
+  Splunk metadata tools (`splunk_get_info`, `splunk_get_index_info`, `splunk_get_metadata`)
+  to preflight the index, and `splunk_run_query` to correlate. That spans tools, prompts,
+  and resources across both servers, every call recorded to an `mcp_provenance` block. With
   k6 2.0 the k6 server is the built-in `k6 x mcp` subcommand, so one binary covers load
   generation with no separate install.
 - **How Splunk is used.** After the run, `run_test` records the wall-clock window.
@@ -70,11 +71,14 @@ every tool call on an audit ledger.
   that window and calls the official `splunk_run_query` tool over the documented
   `mcp-remote` bridge, authenticated with an encrypted Bearer token. Both Splunk phases
   degrade gracefully to k6-only when not configured.
-- **Narrow AI.** A model fills a typed, closed-enum plan: test taxonomy, parameterization,
-  per-endpoint emphasis. The backend is pluggable, a local Ollama model or Claude Haiku
-  via the Messages API, selected with one env var. It never authors k6 source or SPL. Pure
-  Python composes the script and the query, so generation stays deterministic and the blast
-  radius of a bad model output is small. The pipeline works with the model offline.
+- **Deterministic scaffold, model on top.** A deterministic `scaffold` phase composes a
+  runnable k6 baseline from the OpenAPI schema with no model. The `generate_script` phase
+  then has the model author the final script on top of it, guided by k6's own
+  `generate_script` prompt, and `report` has the model narrate each phase as a tarot
+  reading. The backend is pluggable (a local Ollama model or Claude Haiku via the Messages
+  API, one env var). The model never writes SPL, and when it is offline or its output keeps
+  failing validation the pipeline runs the deterministic scaffold, so a run never fails for
+  lack of a model.
 
 ## Challenges we ran into
 
@@ -105,8 +109,9 @@ every tool call on an audit ledger.
 - The valuable signal is in the join. Neither the k6 numbers nor the Splunk rollup is new,
   but pairing them over the exact window is what turns "it got slower" into "5xx errors
   caused it."
-- Determinism belongs in code, judgment belongs in the model. Letting the LLM pick from a
-  closed plan and letting Python write the script and SPL kept the whole pipeline auditable.
+- A deterministic scaffold is what lets the model do more safely. Because a runnable k6
+  baseline always exists, we can let the model author the final script (and narrate the
+  run) without the pipeline ever failing for lack of a model, and Python still owns the SPL.
 - k6 2.0 folding the MCP server into the `k6 x mcp` subcommand removed an entire install
   step and made the demo easier to reproduce.
 

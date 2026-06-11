@@ -16,22 +16,23 @@ flowchart TB
         direction TB
         SM["select_mode"] --> RD["read_diff / parse_intent"]
         RD --> DL["doc_lookup"]
-        DL --> GS["generate_script"]
+        DL --> SC["scaffold<br/>(deterministic)"]
+        SC --> GS["generate_script"]
         GS --> VS["validate_script"]
         VS -->|retry| GS
         VS --> RT["run_test"]
         RT --> PF["splunk_preflight"]
         PF --> CO["correlate"]
-        CO --> RP["report"]
+        CO --> RP["report<br/>(model narration)"]
         LEDGER[("immutable<br/>hash-chained ledger<br/>steps + refusals")]
     end
 
     subgraph AI["AI / models"]
-        OLLAMA["Ollama (local)<br/>closed-enum Plan slot-fill"]
+        LLM["model (Ollama or Claude Haiku)<br/>authors the script · narrates the run"]
     end
 
     subgraph Upstreams["Upstream MCP servers (hidden from the driver)"]
-        K6["Grafana k6 MCP server<br/>list_sections · get_documentation<br/>validate_script · run_script"]
+        K6["Grafana k6 MCP server<br/>list_sections · get_documentation<br/>generate_script prompt · best_practices<br/>validate_script · run_script"]
         SPL["Splunk MCP Server<br/>get_info · get_index_info · get_metadata<br/>splunk_run_query (SPL)"]
     end
 
@@ -44,7 +45,10 @@ flowchart TB
     A -->|MCP: step| SM
     Kassi -.records.-> LEDGER
     DL -->|MCP call_upstream| K6
-    GS -->|HTTP| OLLAMA
+    SC -->|deterministic compose| GS
+    GS -->|k6 generate_script prompt| K6
+    GS -->|HTTP| LLM
+    RP -->|HTTP| LLM
     VS -->|MCP call_upstream| K6
     RT -->|MCP call_upstream| K6
     K6 -->|generated k6 load| TARGET
@@ -78,26 +82,29 @@ Two layers of AI, kept deliberately narrow:
    take next. It sees only kassi's single `step` tool. kassi's state machine refuses any
    illegal step and returns the legal next actions, so the agent's autonomy is bounded by
    construction and fully audited.
-2. **A local LLM** (Ollama) fills a typed, closed-enum `Plan` (test taxonomy,
-   parameterization, per-endpoint emphasis). The model never authors k6 source or SPL;
-   pure Python composes the script and the query. This keeps generation deterministic and
-   the blast radius of a bad model output small.
+2. **A model** (a local Ollama model or Claude Haiku) authors the k6 script on top of the
+   deterministic scaffold and narrates the run. It never writes SPL; pure Python composes
+   the correlation query, and the `scaffold` is the known-good fallback. This keeps the
+   work-phases deterministic and the blast radius of a bad model output small.
 
 ## Data flow between services, APIs, and components
 
 1. Driver calls `step(select_mode, …)`; kassi reads a git diff or scores an OpenAPI spec
    against a natural-language intent to pick endpoints.
 2. `doc_lookup` calls the **k6 MCP server** documentation tools (`list_sections`,
-   `get_documentation`) to ground the generated script and record citations.
-3. `generate_script` calls Ollama for a Plan, then composes a self-contained k6 script.
-4. `validate_script` and `run_test` call the **k6 MCP server**, which drives load against
+   `get_documentation`) to ground the script and record citations.
+3. `scaffold` deterministically composes a self-contained k6 baseline from the OpenAPI
+   schema (no model).
+4. `generate_script` fetches k6's `generate_script` prompt + `best_practices` resource and
+   has the model author the final script on top of the scaffold (falling back to it).
+5. `validate_script` and `run_test` call the **k6 MCP server**, which drives load against
    the **target service**. The target emits logs/metrics that Splunk indexes.
-5. `splunk_preflight` calls the **Splunk MCP Server** to verify the index and capture its
+6. `splunk_preflight` calls the **Splunk MCP Server** to verify the index and capture its
    metadata before correlation.
-6. `correlate` calls the **Splunk MCP Server** with windowed SPL to read that server-side
+7. `correlate` calls the **Splunk MCP Server** with windowed SPL to read that server-side
    telemetry back.
-7. `report` emits a combined client + server verdict to the driver, including the
-   `mcp_provenance` record of every upstream tool call.
-8. Every transition and every refusal is written to Theodosia's immutable, hash-chained
+8. `report` has the model narrate the run, then emits a combined client + server verdict
+   to the driver, including the `mcp_provenance` record of every upstream tool call.
+9. Every transition and every refusal is written to Theodosia's immutable, hash-chained
    ledger; `kassi verify` confirms it has not been tampered with.
 ```

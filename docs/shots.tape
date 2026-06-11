@@ -9,7 +9,7 @@ Require uv
 Set Shell "bash"
 Set FontSize 18
 Set Width 1500
-Set Height 940
+Set Height 1120
 Set Padding 26
 Set TypingSpeed 8ms
 
@@ -47,6 +47,6 @@ Type "clear" Enter
 Sleep 400ms
 Show
 Type "./scripts/divine.sh" Enter
-Sleep 13s
+Sleep 26s
 Screenshot docs/assets/shot-correlate.png
 Sleep 1500ms
