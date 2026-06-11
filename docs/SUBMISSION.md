@@ -5,6 +5,10 @@ Bonus prizes targeted: Best Use of Splunk MCP Server.
 
 This is a draft of the Devpost text description. Edit before submitting.
 
+Verified end-to-end against Splunk Enterprise 10.4.0 (see `docs/SPLUNK_SETUP.md`): the
+full state machine runs, and the `correlate` step queries live Splunk through an MCP
+server and returns a server-side rollup scoped to the test window.
+
 ## The problem
 
 Load testing tells you *that* a change made an endpoint slower. It does not tell you
