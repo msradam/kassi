@@ -1,13 +1,15 @@
 """Generate the cover image and tidy the gallery screenshots.
 
-    uv run --with pillow python scripts/make_cover.py
+    uv run --with pillow python scripts/make_cover.py            # default palette
+    uv run --with pillow python scripts/make_cover.py amethyst   # pick a palette
 
 Tight-crops docs/assets/shot-*.png to their content, then composes
-docs/assets/cover.png (1280x720), a tarot-framed hero with the gold icon.
+docs/assets/cover.png (1280x720), a tarot-framed hero with the recolored icon.
 """
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 from PIL import Image, ImageChops, ImageDraw, ImageFont
@@ -15,12 +17,42 @@ from PIL import Image, ImageChops, ImageDraw, ImageFont
 ROOT = Path(__file__).resolve().parents[1]
 ASSETS = ROOT / "docs" / "assets"
 
-GOLD = (230, 193, 112)
-DIM_GOLD = (158, 134, 86)
 WHITE = (236, 238, 243)
 GRAY = (151, 158, 171)
-BG_TOP = (18, 20, 28)
-BG_BOT = (9, 10, 15)
+
+# Each palette: accent (icon + tagline), dim (kicker), frame (border), bg gradient.
+PALETTES = {
+    "gold": {
+        "accent": (230, 193, 112),
+        "dim": (158, 134, 86),
+        "frame": (90, 78, 52),
+        "bg_top": (18, 20, 28),
+        "bg_bot": (9, 10, 15),
+    },
+    "amethyst": {
+        "accent": (179, 140, 255),
+        "dim": (138, 110, 190),
+        "frame": (92, 74, 138),
+        "bg_top": (22, 16, 33),
+        "bg_bot": (10, 8, 18),
+    },
+    "teal": {
+        "accent": (94, 234, 212),
+        "dim": (96, 168, 158),
+        "frame": (54, 116, 110),
+        "bg_top": (10, 23, 25),
+        "bg_bot": (6, 13, 14),
+    },
+    "splunk": {
+        "accent": (244, 86, 161),
+        "dim": (176, 92, 134),
+        "frame": (128, 64, 100),
+        "bg_top": (23, 13, 21),
+        "bg_bot": (11, 7, 12),
+    },
+}
+
+DEFAULT_PALETTE = "splunk"
 
 FONT_CANDIDATES = {
     "serif": [
@@ -59,14 +91,13 @@ def autocrop(path: Path, margin: int = 30) -> None:
     im.crop(box).save(path)
 
 
-def gold_icon() -> Image.Image:
+def recolor_icon(accent: tuple) -> Image.Image:
     icon = Image.open(ASSETS / "kassi-tarot.png").convert("RGBA")
     w, h = icon.size
     icon = icon.crop((0, 0, w, int(h * 0.85)))  # drop the baked-in credit line
-    bbox = icon.split()[3].getbbox()
-    icon = icon.crop(bbox)
+    icon = icon.crop(icon.split()[3].getbbox())
     out = Image.new("RGBA", icon.size, (0, 0, 0, 0))
-    out.paste(Image.new("RGBA", icon.size, (*GOLD, 255)), (0, 0), icon.split()[3])
+    out.paste(Image.new("RGBA", icon.size, (*accent, 255)), (0, 0), icon.split()[3])
     return out
 
 
@@ -82,18 +113,20 @@ def vgradient(size: tuple[int, int], top: tuple, bot: tuple) -> Image.Image:
     return base
 
 
-def make_cover() -> None:
+def make_cover(palette: str = DEFAULT_PALETTE, out: Path | None = None) -> None:
+    p = PALETTES[palette]
+    accent, dim, frame = p["accent"], p["dim"], p["frame"]
     s = 2  # supersample, then downscale for crisp text
     W, H = 1280 * s, 720 * s
-    img = vgradient((W, H), BG_TOP, BG_BOT)
+    img = vgradient((W, H), p["bg_top"], p["bg_bot"])
     d = ImageDraw.Draw(img)
 
     # tarot-card double border framing the whole cover
-    for inset, width, col in ((26 * s, 2 * s, DIM_GOLD), (34 * s, 1 * s, (90, 78, 52))):
+    for inset, width, col in ((26 * s, 2 * s, dim), (34 * s, 1 * s, frame)):
         d.rectangle((inset, inset, W - inset, H - inset), outline=col, width=width)
 
-    # right-hand hero: the gold tarot icon
-    icon = gold_icon()
+    # right-hand hero: the recolored tarot icon
+    icon = recolor_icon(accent)
     ih = 338 * s
     iw = round(icon.width * ih / icon.height)
     icon = icon.resize((iw, ih), Image.LANCZOS)
@@ -101,11 +134,9 @@ def make_cover() -> None:
     img.paste(icon, (icon_cx - iw // 2, (H - ih) // 2 - 4 * s), icon)
 
     x = 78 * s
-    d.text(
-        (x, 96 * s), "SPLUNK AGENTIC OPS HACKATHON · OBSERVABILITY", font=font("mono", 19 * s), fill=DIM_GOLD
-    )
+    d.text((x, 96 * s), "SPLUNK AGENTIC OPS HACKATHON · OBSERVABILITY", font=font("mono", 19 * s), fill=dim)
     d.text((x, 150 * s), "kassi", font=font("serif", 168 * s), fill=WHITE)
-    d.text((x, 360 * s), "Divinate your stack's performance.", font=font("serif_italic", 43 * s), fill=GOLD)
+    d.text((x, 360 * s), "Divinate your stack's performance.", font=font("serif_italic", 43 * s), fill=accent)
 
     sub = font("sans", 27 * s)
     lines = [
@@ -121,23 +152,22 @@ def make_cover() -> None:
         font=font("mono", 22 * s),
         fill=(120, 128, 142),
     )
-
     d.text(
         (x, 664 * s),
         "Tarot icon: Eucalyp / Noun Project (CC BY 3.0)",
         font=font("sans", 15 * s),
-        fill=(96, 102, 114),
+        fill=(110, 116, 130),
     )
 
-    img.resize((1280, 720), Image.LANCZOS).save(ASSETS / "cover.png")
+    img.resize((1280, 720), Image.LANCZOS).save(out or ASSETS / "cover.png")
 
 
 def main() -> None:
+    palette = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_PALETTE
     for shot in sorted(ASSETS.glob("shot-*.png")):
         autocrop(shot)
-        print(f"cropped {shot.name}")
-    make_cover()
-    print("wrote cover.png")
+    make_cover(palette)
+    print(f"wrote cover.png ({palette})")
 
 
 if __name__ == "__main__":
