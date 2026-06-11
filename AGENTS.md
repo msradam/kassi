@@ -31,13 +31,14 @@ Experience). Targets the Best Use of Splunk MCP Server bonus prize.
 src/kassi/
   __init__.py        exports build_application
   app.py             THE FSM: async @action functions + build_application() + mount();
-                     doc_lookup, scaffold, generate_script, splunk_preflight, report-narration
+                     doc_lookup, scaffold, generate_script, fix_script (validation loop),
+                     splunk_preflight, correlate (4 queries), report-narration
   cli.py             `kassi` console command (Theodosia build_cli); loads .env; warm-k6
   upstream.py        k6 + splunk upstream MCP configs; splunk_configured()
   k6gen.py           fetch_k6_generation_guidance(): k6 MCP generate_script prompt + best_practices
   state.py           Pydantic models (Endpoint, RunResult); MAX_FIX_ATTEMPTS
-  parse.py           pure helpers: diff->endpoints, intent scoring, SPL builder, k6 doc +
-                     Splunk parsers, extract_script + build_generation_description
+  parse.py           pure helpers: diff->endpoints, intent scoring, k6 stdout/doc parsers,
+                     build_correlation_queries + summarize_findings, generation helpers
   llm.py             OllamaLLM + AnthropicLLM clients, LLM Protocol, make_llm() factory
   arcana.py          theming only: phase -> Major Arcana card; kept out of state/report
   githost.py         git diff via subprocess (the only non-MCP shell-out kassi keeps)
@@ -47,10 +48,13 @@ src/kassi/
     compose.py       pure-Python composer -> a single self-contained k6 scaffold
 tests/test_fsm.py    offline FSM tests (FakeUpstream + fake LLM)
 examples/petstore/   sample openapi.json for intent mode + tests
+examples/petclinic/  flawed demo target: healthy baseline + POST /api/visits (SQLite
+                     write-lock flaw); FastAPI app ships access logs to Splunk HEC
 scripts/             local Splunk helpers (see docs/SPLUNK_SETUP.md)
   seed_splunk.py        create index + HEC, ingest sample telemetry, verify the SPL
   dev_splunk_mcp.py     LOCAL DEV ONLY stdio MCP bridge to Splunk REST
-  verify_correlate_live.py  drive the whole FSM; correlate hits live Splunk
+  verify_correlate_live.py  drive the whole FSM; correlate hits live Splunk (canned k6)
+  verify_petclinic.py   headline demo: real app + real k6 + real Splunk root-cause
 docs/SUBMISSION.md   Devpost writeup draft
 docs/SPLUNK_SETUP.md reproducible local Splunk install + verified results
 architecture_diagram.md  required hackathon diagram (mermaid + prose)
@@ -64,14 +68,18 @@ The state machine lives entirely in `app.py`. Flow:
 ```
 select_mode ─diff──→ read_diff → extract_endpoints ┐
             └intent─→ parse_intent ────────────────┴→ doc_lookup → scaffold → generate_script
-generate_script → validate_script ⇄ (retry) generate_script
+generate_script → validate_script ─needs_fix─→ fix_script → validate_script   (bounded loop)
 validate_script → run_test ─splunk?─→ splunk_preflight → correlate → report
                           └─else──────────────────────────────────→ report   (also on validation give-up)
 ```
 
 `scaffold` composes a deterministic k6 baseline (no model); `generate_script` has the model
 author the final script on top of it using k6's `generate_script` MCP prompt (fetched via
-`k6gen.py`), falling back to the scaffold when the model is absent or validation gives up.
+`k6gen.py`). `validate_script` gates the script: on failure it routes to `fix_script`, an
+explicit correction node that repairs the script from the real k6 error (`parse_validation`
+surfaces stderr + the server's `issues`/`suggestions`) and loops back to validation, bounded
+by `MAX_FIX_ATTEMPTS`, then falls back to the scaffold. An unvalidated script never reaches
+`run_test`.
 `doc_lookup` (k6 docs) and `splunk_preflight` (Splunk index/metadata/info) are MCP-native
 phases: both use `safe_upstream` (never block the run) and append to the `mcp_calls`
 provenance list that `report` surfaces as `mcp_provenance`. `report` also has the model
@@ -148,7 +156,9 @@ and classifies the result). The driving agent never sees these servers.
   splunk_configured()`; the graph branches on it, and both `splunk_preflight` and
   `correlate` degrade gracefully (via `safe_upstream`) when absent. kassi calls four
   Splunk tools: `splunk_get_info` + `splunk_get_index_info` + `splunk_get_metadata`
-  (splunk_preflight) and `splunk_run_query` (correlate). The official server is reached
+  (splunk_preflight) and `splunk_run_query` x4 (correlate runs a rollup, timeline,
+  by-path, and root-cause query, then `summarize_findings` synthesizes the verdict). The
+  official server is reached
   through `npx mcp-remote <endpoint> --header "Authorization: Bearer <token>"`; this is
   the documented official client transport. `KASSI_SPLUNK_INSECURE=1` adds
   `NODE_TLS_REJECT_UNAUTHORIZED=0` for a local self-signed Splunk cert only.
@@ -226,12 +236,24 @@ convenience, not the shipped integration.
 
 - The k6 MCP enforces caps (max 50 VUs, max 5 min). The load taxonomy in `compose.py`
   stays within them; keep new scenarios under those limits.
+- **The k6 MCP `run_script` ignores the script's own `options`/scenarios** and defaults
+  to 1 VU. `run_test` must pass `vus` + `duration` as tool args (see `_load_profile`);
+  the generated script's options are vestigial. The generate prompt tells the model to
+  keep think time minimal so those VUs produce real concurrency.
+- **`run_script` returns the k6 summary as `stdout` text, not structured `metrics`.**
+  `parse.parse_run` falls back to `parse_run_stdout`, which scrapes `http_reqs` / `p(95)`
+  / failure-rate from the default k6 summary. Do not reintroduce a custom `handleSummary`
+  in `compose.py`; it replaces that default summary and breaks the parse.
+- The k6 MCP has a security validator that rejects some JS patterns (e.g. `function(`
+  with no space reads as dynamic-function creation). Authored scripts that trip it fail
+  validation and fall back to the scaffold.
 - `__ENV.TARGET_BASE_URL` is not forwarded into the k6 MCP subprocess; the composer
   bakes the base URL in as the literal default, so the target must be reachable from
   wherever the k6 server runs (Docker needs `host.docker.internal`).
 - `run_test` records the wall-clock window; `correlate`'s SPL is scoped to it. A
-  near-instant run produces a zero-width window and zero rows. Real k6 runs span
-  seconds; the verify script simulates a window by sleeping and ingesting during it.
+  near-instant run produces a zero-width window and zero rows. `verify_correlate_live.py`
+  cans k6 and ingests synthetic telemetry; `verify_petclinic.py` is the real path (real k6
+  span + a real app emitting to HEC), which is what makes the server-side findings genuine.
 - `safe_upstream` classifies a dict containing a truthy `error` key as ERROR. For k6
   validate we use `call_upstream` directly so a well-formed "script invalid" payload
   is parsed by `parse.parse_validation`, not swallowed as an upstream error.

@@ -8,6 +8,7 @@ depending on the k6 version (flat numbers, ``{"count": ...}`` envelopes, or a
 
 from __future__ import annotations
 
+import json
 import re
 from typing import Any
 
@@ -80,6 +81,68 @@ def build_correlation_spl(index: str, earliest: float, latest: float) -> str:
     )
 
 
+def build_correlation_queries(index: str, earliest: float, latest: float, span: str = "2s") -> dict[str, str]:
+    """The server-side questions k6 cannot answer, one SPL each, scoped to the test window.
+
+    rollup: overview. timeline: when it degraded (the saturation onset). by_path: which
+    endpoint degraded. root_cause: the dominant server-side error. Tuned for
+    HTTP-access-log-shaped data (`status`, `response_time`, `path`, `error_message`).
+    """
+    base = f"search index={index} earliest={int(earliest)} latest={int(latest)}"
+    return {
+        "rollup": (
+            f"{base} | stats count AS total_events, "
+            "sum(eval(if(status>=500,1,0))) AS server_errors, "
+            "sum(eval(if(status>=400 AND status<500,1,0))) AS client_errors, "
+            "perc95(response_time) AS p95_ms"
+        ),
+        "timeline": (
+            f"{base} | timechart span={span} count AS reqs, "
+            "sum(eval(if(status>=500,1,0))) AS errors, perc95(response_time) AS p95_ms"
+        ),
+        "by_path": (
+            f"{base} | stats count AS reqs, sum(eval(if(status>=500,1,0))) AS errors, "
+            "perc95(response_time) AS p95_ms by path "
+            "| eval err_pct=round(100*errors/reqs,1) | sort -err_pct"
+        ),
+        "root_cause": f"{base} status>=500 | top limit=3 error_message",
+    }
+
+
+def summarize_findings(results: dict[str, list[dict[str, Any]]]) -> dict[str, Any]:
+    """Synthesize the actionable verdict facts from the four query result sets."""
+    rollup = (results.get("rollup") or [{}])[0]
+    by_path = results.get("by_path") or []
+    worst = by_path[0] if by_path else None
+
+    onset = None
+    for row in results.get("timeline") or []:
+        if _to_int(row.get("errors")):
+            onset = {"time": row.get("_time"), "errors": _to_int(row.get("errors"))}
+            break
+
+    causes = results.get("root_cause") or []
+    top = causes[0] if causes else None
+
+    return {
+        "total_events": _to_int(rollup.get("total_events")),
+        "server_errors": _to_int(rollup.get("server_errors")),
+        "client_errors": _to_int(rollup.get("client_errors")),
+        "p95_ms": _to_float(rollup.get("p95_ms")),
+        "worst_path": (
+            {"path": worst.get("path"), "err_pct": worst.get("err_pct"), "p95_ms": worst.get("p95_ms")}
+            if worst and worst.get("path")
+            else None
+        ),
+        "onset": onset,
+        "top_error": (
+            {"error_message": top.get("error_message"), "count": _to_int(top.get("count"))}
+            if top and top.get("error_message")
+            else None
+        ),
+    }
+
+
 def summarize_correlation(data: Any) -> list[dict[str, Any]]:
     """Pull result rows out of a Splunk MCP `splunk_run_query` payload, tolerating
     the common envelope shapes (`{"results": [...]}`, `{"data": {...}}`, a bare list).
@@ -116,16 +179,38 @@ def build_generation_description(
     parts.append("Target endpoints:\n" + eps)
     parts.append(
         "Build on this deterministic scaffold. Keep it a single self-contained file with "
-        "plain k6/http calls and no local imports:\n\n" + scaffold
+        "plain k6/http calls and no local imports. Use minimal think time (no sleep, or at "
+        "most 0.1s) so the runner's virtual users produce real concurrency, and do not declare "
+        "your own `options` or scenarios block, the runner sets the VUs and duration:\n\n" + scaffold
     )
     if validation_error:
         parts.append(f"The previous attempt failed k6 validation:\n{validation_error}\nFix it.")
     return "\n\n".join(parts)
 
 
+def build_fix_description(script: str, validation_error: str | None, endpoints: list[Endpoint]) -> str:
+    """The repair request for the fix_script phase: the failing script plus the k6 error."""
+    eps = "\n".join(f"  - {ep.method} {ep.path}" for ep in endpoints)
+    return (
+        "This k6 script failed validation. Fix it so it validates and runs. Keep it a single "
+        "self-contained file with plain k6/http calls, no local imports, no `options` or "
+        "scenarios block, and minimal think time.\n\n"
+        f"Target endpoints:\n{eps}\n\n"
+        f"k6 validation error:\n{validation_error}\n\n"
+        f"Failing script:\n{script}"
+    )
+
+
 def _to_int(value: Any) -> int | None:
     try:
         return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _to_float(value: Any) -> float | None:
+    try:
+        return round(float(value), 2)
     except (TypeError, ValueError):
         return None
 
@@ -240,14 +325,71 @@ def _metric_value(metrics: dict, name: str, *keys: str) -> float | None:
     return None
 
 
+def _k6_stderr_errors(stderr: Any) -> str:
+    """Pull the human-meaningful error lines out of k6's JSON-lines stderr."""
+    if not isinstance(stderr, str):
+        return ""
+    msgs: list[str] = []
+    for line in stderr.strip().splitlines()[-15:]:
+        try:
+            obj = json.loads(line.strip())
+        except (json.JSONDecodeError, TypeError):
+            continue
+        if obj.get("level") == "error" and obj.get("msg"):
+            msgs.append(str(obj["msg"]).splitlines()[0][:200])
+    return " | ".join(dict.fromkeys(msgs))[:600]
+
+
 def parse_validation(payload: Any) -> str | None:
-    """Return an error string when the k6 MCP `validate_script` payload is a failure."""
+    """Return an actionable error when the k6 MCP `validate_script` payload is a failure,
+    surfacing the real k6 stderr plus the server's structured issues and suggestions, so
+    the fix loop has something to act on instead of a bare exit code."""
     if not isinstance(payload, dict):
         return f"unexpected validate_script response: {payload!r:.200}"
-    if payload.get("valid") is True or payload.get("exit_code") == 0:
+    if payload.get("valid") is True and payload.get("exit_code") in (0, None):
         return None
-    detail = payload.get("error") or payload.get("stderr") or payload.get("stdout") or ""
-    return f"k6 validate failed (exit {payload.get('exit_code')}): {str(detail)[:400]}"
+
+    parts = [f"k6 validation failed (exit {payload.get('exit_code')})."]
+    if err := _k6_stderr_errors(payload.get("stderr")):
+        parts.append("k6 error: " + err)
+    issues = payload.get("issues")
+    if isinstance(issues, list):
+        lines = [
+            f"- {i['message']}" + (f" (fix: {i['suggestion']})" if i.get("suggestion") else "")
+            for i in issues[:3]
+            if isinstance(i, dict) and i.get("message")
+        ]
+        if lines:
+            parts.append("issues:\n" + "\n".join(lines))
+    if not err and len(parts) == 1:
+        parts.append(str(payload.get("error") or payload.get("stderr") or payload.get("stdout") or "")[:400])
+    return "\n".join(parts)[:1200]
+
+
+_K6_REQS = re.compile(r"http_reqs[.\s]*:\s*([\d,]+)")
+_K6_P95 = re.compile(r"http_req_duration[^\n]*?p\(95\)=([\d.]+)\s*(us|µs|ms|s)\b")
+_K6_FAILED = re.compile(r"http_req_failed[.\s]*:\s*([\d.]+)%")
+_K6_CHECKS = re.compile(r"✓\s*([\d,]+).*?✗\s*([\d,]+)", re.DOTALL)
+
+
+def _to_ms(value: str, unit: str) -> float:
+    v = float(value)
+    return round(v / 1000 if unit in ("us", "µs") else v * 1000 if unit == "s" else v, 2)
+
+
+def parse_run_stdout(stdout: Any) -> dict[str, Any]:
+    """The k6 MCP returns the summary as stdout text, not structured metrics, so pull
+    http_reqs / p95 / failure rate out of the default k6 end-of-test summary."""
+    if not isinstance(stdout, str):
+        return {}
+    out: dict[str, Any] = {}
+    if m := _K6_REQS.search(stdout):
+        out["http_reqs"] = int(m.group(1).replace(",", ""))
+    if m := _K6_P95.search(stdout):
+        out["p95_ms"] = _to_ms(m.group(1), m.group(2))
+    if m := _K6_FAILED.search(stdout):
+        out["failed_rate"] = round(float(m.group(1)) / 100, 4)
+    return out
 
 
 def parse_run(payload: Any) -> RunResult:
@@ -267,6 +409,12 @@ def parse_run(payload: Any) -> RunResult:
     passed = _metric_value(metrics, "checks", "passes")
     failed_checks = _metric_value(metrics, "checks", "fails")
 
+    if reqs is None or p95 is None:
+        summary = parse_run_stdout(payload.get("stdout"))
+        reqs = reqs if reqs is not None else summary.get("http_reqs")
+        p95 = p95 if p95 is not None else summary.get("p95_ms")
+        failed = failed if failed is not None else summary.get("failed_rate")
+
     return RunResult(
         success=bool(payload.get("success", payload.get("exit_code") == 0)),
         exit_code=int(payload.get("exit_code", -1)),
@@ -275,7 +423,7 @@ def parse_run(payload: Any) -> RunResult:
         http_req_failed_rate=failed,
         checks_passed=int(passed or 0),
         checks_failed=int(failed_checks or 0),
-        summary_text=str(payload.get("summary") or ""),
+        summary_text=str(payload.get("summary") or payload.get("stdout") or "")[:600],
         detail=str(payload.get("error") or "")[:400],
         raw_metrics=metrics,
     )

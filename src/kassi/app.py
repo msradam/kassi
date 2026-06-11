@@ -9,13 +9,16 @@ servers, only kassi's single ``step`` tool.
 Flow:
     select_mode ─diff──→ read_diff → extract_endpoints ┐
                 └intent─→ parse_intent ────────────────┴→ doc_lookup → scaffold → generate_script
-    generate_script → validate_script ⇄ (retry) generate_script
+    generate_script → validate_script ─needs_fix─→ fix_script → validate_script  (bounded loop)
     validate_script → run_test ─splunk?─→ splunk_preflight → correlate → report
                               └─else──────────────────────────────────→ report  (also on give-up)
 
 ``scaffold`` composes a deterministic k6 baseline from the OpenAPI spec; ``generate_script``
 then has the model author the final script on top of it, guided by k6's own
-``generate_script`` MCP prompt, and falls back to the scaffold when the model is absent.
+``generate_script`` MCP prompt. The ``validate_script → fix_script → validate_script`` loop is
+an explicit gate: on a validation failure ``fix_script`` repairs the script from the k6 error
+(real stderr + issues), bounded by ``MAX_FIX_ATTEMPTS``, then falls back to the deterministic
+scaffold. So the model never produces an unvalidated script that reaches ``run_test``.
 ``doc_lookup`` (k6 MCP docs) and ``splunk_preflight`` (Splunk index/metadata/info) are
 MCP-native phases: both degrade gracefully via ``safe_upstream`` and record every upstream
 tool call to ``mcp_calls`` for the report's provenance. ``report`` narrates the run with the
@@ -47,6 +50,14 @@ log = structlog.get_logger()
 def _record(calls: list[dict[str, str]], server: str, tool: str, status: str) -> list[dict[str, str]]:
     """Append one upstream tool call to the provenance log (immutably)."""
     return [*calls, {"server": server, "tool": tool, "status": status}]
+
+
+def _load_profile(plan: dict | None) -> tuple[int, str]:
+    """VUs and duration for the k6 MCP run_script tool, which ignores the script's own
+    `options` block. Derived from the plan's taxonomy."""
+    if (plan or {}).get("test_taxonomy") == "smoke":
+        return 1, "5s"
+    return 25, "25s"
 
 
 def _load_spec(repo_path: str | None) -> dict[str, Any] | None:
@@ -190,16 +201,14 @@ async def scaffold(state: State) -> State:
 
 
 @action(
-    reads=["scaffold_script", "endpoints", "user_intent", "fix_attempts", "validation_error", "mcp_calls"],
-    writes=["generated_script", "stage", "fix_attempts", "mcp_calls"],
+    reads=["scaffold_script", "endpoints", "user_intent", "mcp_calls"],
+    writes=["generated_script", "stage", "mcp_calls"],
 )
 async def generate_script(state: State) -> State:
-    """Author the final k6 script on top of the scaffold, using k6's own `generate_script` MCP prompt and best-practices to guide the model. Falls back to the scaffold when the model or guidance is unavailable."""
+    """Author the final k6 script on top of the scaffold, using k6's own `generate_script` MCP prompt and best-practices to guide the model. Falls back to the scaffold when the model or guidance is unavailable; validation failures are repaired by the fix_script phase."""
     scaffold_script = state["scaffold_script"]
     endpoints = [Endpoint(**e) for e in state["endpoints"]]
-    description = parse.build_generation_description(
-        endpoints, state["user_intent"], scaffold_script, state["validation_error"]
-    )
+    description = parse.build_generation_description(endpoints, state["user_intent"], scaffold_script)
     calls = state["mcp_calls"]
 
     guidance = await fetch_k6_generation_guidance(description)
@@ -219,14 +228,33 @@ async def generate_script(state: State) -> State:
     if not script:
         log.info("generate_script_used_scaffold")
         script = scaffold_script
+    return state.update(generated_script=script, stage="generated", mcp_calls=calls)
 
-    retry_bump = 1 if state["validation_error"] else 0
-    return state.update(
-        generated_script=script,
-        stage="generated",
-        fix_attempts=state["fix_attempts"] + retry_bump,
-        mcp_calls=calls,
+
+@action(
+    reads=["generated_script", "scaffold_script", "validation_error", "endpoints", "fix_attempts"],
+    writes=["generated_script", "stage", "fix_attempts"],
+)
+async def fix_script(state: State) -> State:
+    """Repair the k6 script using the error the k6 MCP `validate_script` tool returned (real stderr + issues + suggestions), then loop back to validation. The correction loop is an explicit edge in the state machine; on a model failure it falls back to the scaffold."""
+    endpoints = [Endpoint(**e) for e in state["endpoints"]]
+    description = parse.build_fix_description(state["generated_script"], state["validation_error"], endpoints)
+    system = (
+        "You are a k6 expert. Fix the script so it passes validation. Return ONLY the corrected "
+        "k6 script. No prose, no markdown fences."
     )
+
+    script = ""
+    try:
+        raw = await asyncio.to_thread(make_llm().generate, system=system, user=description)
+        script = parse.extract_script(raw)
+    except LLMError as exc:
+        log.warning("fix_script_llm_failed", error=str(exc))
+
+    if not script:
+        script = state["scaffold_script"]
+    log.info("fix_script_done", attempt=state["fix_attempts"] + 1)
+    return state.update(generated_script=script, stage="generated", fix_attempts=state["fix_attempts"] + 1)
 
 
 @action(
@@ -265,14 +293,17 @@ async def validate_script(state: State) -> State:
 
 
 @action(
-    reads=["generated_script", "mcp_calls"],
+    reads=["generated_script", "plan", "mcp_calls"],
     writes=["run_result", "run_started_at", "run_ended_at", "stage", "error", "mcp_calls"],
 )
 async def run_test(state: State) -> State:
-    """Execute the load test via the k6 MCP `run_script` tool and parse the metrics."""
+    """Execute the load test via the k6 MCP `run_script` tool (passing VUs + duration, which the tool needs since it ignores the script's own options) and parse the metrics from the summary."""
     started = time.time()
+    vus, duration = _load_profile(state["plan"])
     try:
-        payload = await call_upstream(K6_SERVER, "run_script", {"script": state["generated_script"]})
+        payload = await call_upstream(
+            K6_SERVER, "run_script", {"script": state["generated_script"], "vus": vus, "duration": duration}
+        )
     except Exception as exc:
         return state.update(
             run_result=None,
@@ -339,27 +370,36 @@ async def splunk_preflight(state: State) -> State:
     writes=["correlation", "mcp_calls", "stage"],
 )
 async def correlate(state: State, splunk_spl: str = "") -> State:
-    """Query Splunk (via the Splunk MCP `splunk_run_query` tool) for the target's server-side telemetry over the exact test window, and pair it with the k6 client-side metrics. Pass `splunk_spl` to override the default rollup."""
+    """Read the target's server-side telemetry over the exact test window via the Splunk MCP `splunk_run_query` tool: an overview rollup, a per-second timeline (when it degraded), a by-endpoint breakdown (which route degraded), and the dominant server-side error (why). Synthesize the actionable findings. Pass `splunk_spl` to override the rollup query."""
     earliest = state["run_started_at"] or (time.time() - 300)
     latest = state["run_ended_at"] or time.time()
-    spl = splunk_spl.strip() or parse.build_correlation_spl(state["splunk_index"], earliest, latest)
+    queries = parse.build_correlation_queries(state["splunk_index"], earliest, latest)
+    if splunk_spl.strip():
+        queries["rollup"] = splunk_spl.strip()
 
-    result = await safe_upstream(
-        "splunk_telemetry", SPLUNK_SERVER, "splunk_run_query", {"query": spl}, expect="dict"
+    calls = state["mcp_calls"]
+    out: dict[str, Any] = {}
+    rows_by_query: dict[str, list] = {}
+    available = False
+    for name, spl in queries.items():
+        result = await safe_upstream(
+            "splunk_telemetry", SPLUNK_SERVER, "splunk_run_query", {"query": spl}, expect="dict"
+        )
+        calls = _record(calls, SPLUNK_SERVER, "splunk_run_query", result.status)
+        rows = parse.summarize_correlation(result.data)
+        out[name] = {"spl": spl, "rows": rows}
+        rows_by_query[name] = rows
+        available = available or result.usable
+
+    findings = parse.summarize_findings(rows_by_query)
+    correlation = {"available": available, "queries": out, "findings": findings}
+    log.info(
+        "correlate_done",
+        available=available,
+        worst_path=(findings["worst_path"] or {}).get("path"),
+        top_error=(findings["top_error"] or {}).get("error_message"),
     )
-    correlation = {
-        "spl": spl,
-        "status": result.status,
-        "available": result.usable,
-        "rows": parse.summarize_correlation(result.data),
-        "detail": result.detail,
-    }
-    log.info("correlate_done", status=result.status, rows=len(correlation["rows"]))
-    return state.update(
-        correlation=correlation,
-        mcp_calls=_record(state["mcp_calls"], SPLUNK_SERVER, "splunk_run_query", result.status),
-        stage="correlated",
-    )
+    return state.update(correlation=correlation, mcp_calls=calls, stage="correlated")
 
 
 @action(
@@ -375,6 +415,7 @@ async def correlate(state: State, splunk_spl: str = "") -> State:
         "doc_refs",
         "splunk_preflight",
         "mcp_calls",
+        "fix_attempts",
     ],
     writes=["report", "stage"],
 )
@@ -407,6 +448,13 @@ def _verdict(state: State) -> str:
         return f"failed: {state['error']}"
     if state["run_result"] is None:
         return f"no run: {state['validation_error'] or 'validation gave up'}"
+    findings = (state["correlation"] or {}).get("findings") or {}
+    wp, te = findings.get("worst_path"), findings.get("top_error")
+    if wp and te:
+        return (
+            f"server-side regression: {wp['path']} p95 {wp['p95_ms']}ms, "
+            f"{wp['err_pct']}% 5xx, cause '{te['error_message']}'"
+        )
     rr = state["run_result"]
     return "passed" if rr.get("success") else f"ran with failures (exit {rr.get('exit_code')})"
 
@@ -426,8 +474,15 @@ def _phase_facts(state: State, verdict: str) -> str:
         lines.append(f"- The Hierophant (doc_lookup): consulted k6 docs ({names})")
     if plan := state["plan"]:
         lines.append(f"- The Chariot (scaffold): deterministic {plan.get('test_taxonomy', 'load')} scaffold")
+    fixes = state["fix_attempts"]
     if state["validation_error"]:
-        lines.append("- The Magician/Justice: authored script failed validation, ran the scaffold instead")
+        lines.append(
+            f"- The Magician/Justice/Temperance: validation failed after {fixes} fix attempt(s), ran the scaffold"
+        )
+    elif fixes:
+        lines.append(
+            f"- The Magician/Justice/Temperance: authored the script, repaired it in {fixes} round(s), validated"
+        )
     else:
         lines.append("- The Magician/Justice: authored the script on the scaffold; it passed validation")
     if rr := state["run_result"]:
@@ -441,9 +496,16 @@ def _phase_facts(state: State, verdict: str) -> str:
             f"- The Hermit (splunk_preflight): index {pf.get('index')}, exists={pf.get('exists')}, "
             f"events={pf.get('event_count')}"
         )
-        rows = (state["correlation"] or {}).get("rows") or []
-        if rows:
-            lines.append(f"- The Lovers (correlate): server-side rollup {rows[0]}")
+        f = (state["correlation"] or {}).get("findings") or {}
+        wp, te = f.get("worst_path"), f.get("top_error")
+        detail = f"server 5xx={f.get('server_errors')} 4xx={f.get('client_errors')} p95={f.get('p95_ms')}ms"
+        if wp:
+            detail += (
+                f"; worst endpoint {wp.get('path')} at {wp.get('err_pct')}% errors, p95 {wp.get('p95_ms')}ms"
+            )
+        if te:
+            detail += f"; dominant server error '{te.get('error_message')}' ({te.get('count')}x)"
+        lines.append(f"- The Lovers (correlate): {detail}")
     lines.append(f"- Judgement (report): verdict = {verdict}")
     return "\n".join(lines)
 
@@ -488,6 +550,7 @@ def build_application():
             scaffold=scaffold,
             generate_script=generate_script,
             validate_script=validate_script,
+            fix_script=fix_script,
             run_test=run_test,
             splunk_preflight=splunk_preflight,
             correlate=correlate,
@@ -505,7 +568,8 @@ def build_application():
             ("scaffold", "report", Condition.expr("stage == 'failed'")),
             ("scaffold", "generate_script", Condition.expr("stage == 'scaffolded'")),
             ("generate_script", "validate_script", Condition.expr("stage == 'generated'")),
-            ("validate_script", "generate_script", Condition.expr("stage == 'needs_fix'")),
+            ("validate_script", "fix_script", Condition.expr("stage == 'needs_fix'")),
+            ("fix_script", "validate_script", Condition.expr("stage == 'generated'")),
             ("validate_script", "run_test", Condition.expr("stage == 'validated'")),
             ("validate_script", "report", Condition.expr("stage == 'failed_validation'")),
             ("run_test", "splunk_preflight", Condition.expr("stage == 'ran' and splunk_enabled")),

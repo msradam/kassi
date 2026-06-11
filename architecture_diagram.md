@@ -19,7 +19,8 @@ flowchart TB
         DL --> SC["scaffold<br/>(deterministic)"]
         SC --> GS["generate_script"]
         GS --> VS["validate_script"]
-        VS -->|retry| GS
+        VS -->|needs fix| FX["fix_script"]
+        FX --> VS
         VS --> RT["run_test"]
         RT --> PF["splunk_preflight"]
         PF --> CO["correlate"]

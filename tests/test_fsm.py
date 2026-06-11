@@ -45,9 +45,21 @@ K6_RESPONSES = {
 K6_AND_SPLUNK_RESPONSES = {
     **K6_RESPONSES,
     "splunk": {
+        # One rich row that satisfies all four correlation queries (FakeUpstream is arg-blind).
         "splunk_run_query": {
             "results": [
-                {"total_events": "4210", "server_errors": "7", "client_errors": "0", "avg_response_ms": "9.4"}
+                {
+                    "total_events": "120",
+                    "server_errors": "7",
+                    "client_errors": "3",
+                    "p95_ms": "284.3",
+                    "path": "/api/visits",
+                    "reqs": "120",
+                    "errors": "7",
+                    "err_pct": "59.2",
+                    "error_message": "database is locked",
+                    "count": "7",
+                }
             ]
         },
         "splunk_get_info": {"results": [{"version": "10.4.0", "serverName": "Mac", "health_info": "green"}]},
@@ -153,12 +165,20 @@ async def test_splunk_correlation_when_configured(monkeypatch):
     assert report["splunk_enabled"] is True
     correlation = report["correlation"]
     assert correlation["available"] is True
-    assert correlation["rows"][0]["server_errors"] == "7"
-    assert "index=web" in correlation["spl"]
 
+    # correlate runs four windowed queries (overview, timeline, by-path, root cause).
     queries = fake.calls_to("splunk", "splunk_run_query")
-    assert len(queries) == 1
-    assert "earliest=" in queries[0].args["query"]
+    assert len(queries) == 4
+    assert all("earliest=" in q.args["query"] for q in queries)
+    assert set(correlation["queries"]) == {"rollup", "timeline", "by_path", "root_cause"}
+    assert "index=web" in correlation["queries"]["rollup"]["spl"]
+
+    # the synthesized findings are what makes the Splunk side actionable.
+    f = correlation["findings"]
+    assert f["server_errors"] == 7
+    assert f["worst_path"]["path"] == "/api/visits"
+    assert f["worst_path"]["err_pct"] == "59.2"
+    assert f["top_error"]["error_message"] == "database is locked"
 
     # splunk_preflight verified the index and captured sourcetypes + version before correlating.
     assert fake.calls_to("splunk", "splunk_get_index_info")

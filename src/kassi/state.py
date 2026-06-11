@@ -11,7 +11,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-MAX_FIX_ATTEMPTS = 2
+MAX_FIX_ATTEMPTS = 3
 
 
 class Endpoint(BaseModel):

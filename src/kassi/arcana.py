@@ -25,6 +25,7 @@ ARCANA: dict[str, tuple[str, str, str]] = {
         "As above, so below: the agent authors the script atop the scaffold.",
     ),
     "validate_script": ("XI", "Justice", "The script is weighed; the unworthy is turned back."),
+    "fix_script": ("XIV", "Temperance", "The flawed draft is tempered against k6's judgment until it holds."),
     "run_test": ("XVI", "The Tower", "Load strikes the structure; what breaks is revealed."),
     "splunk_preflight": ("IX", "The Hermit", "A lantern into the index before the reading."),
     "correlate": ("VI", "The Lovers", "Client and server are joined over one window."),

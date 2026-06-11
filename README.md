@@ -155,7 +155,8 @@ stateDiagram-v2
     scaffold --> generate_script
     scaffold --> report: no endpoints
     generate_script --> validate_script
-    validate_script --> generate_script: retry
+    validate_script --> fix_script: needs fix
+    fix_script --> validate_script
     validate_script --> run_test: valid / scaffold
     validate_script --> report: gave up
     run_test --> splunk_preflight: splunk enabled
@@ -177,18 +178,26 @@ stateDiagram-v2
   resolve local imports, so kassi emits plain `k6/http` calls. This scaffold is the
   known-good fallback.
 - `generate_script` has the model author the final script on top of the scaffold,
-  guided by k6's own `generate_script` MCP prompt and `best_practices` resource. If the
-  model is unavailable or its output keeps failing validation, kassi runs the scaffold.
-- `validate_script` and `run_test` call the k6 MCP `validate_script` / `run_script`
-  tools through `call_upstream`. `run_test` records the wall-clock test window. The
-  retry loop is bounded; on give-up it runs the deterministic scaffold rather than fail.
+  guided by k6's own `generate_script` MCP prompt and `best_practices` resource.
+- `validate_script` gates the script at the k6 MCP `validate_script` tool. On failure it
+  routes to `fix_script`, an explicit correction loop in the state machine: `fix_script`
+  repairs the script from the real k6 error (stderr + the server's structured issues and
+  suggestions) and loops back to validation. The loop is bounded by `MAX_FIX_ATTEMPTS`;
+  on give-up it runs the deterministic scaffold rather than fail. So an unvalidated script
+  never reaches `run_test`.
+- `run_test` executes the validated script via the k6 MCP `run_script` tool (passing VUs
+  and duration, which the tool needs since it ignores the script's own options) and
+  records the wall-clock test window.
 - `splunk_preflight` verifies the target index exists and captures its event count,
   sourcetypes, and the Splunk version (`splunk_get_info` / `splunk_get_index_info` /
   `splunk_get_metadata`) before correlating. It catches the "wrong index, zero rows"
   failure early and is non-blocking.
-- `correlate` calls the Splunk MCP `splunk_run_query` tool with an SPL rollup scoped
-  to that window (override per run with `splunk_spl`), so a client-side regression can
-  be tied to server-side errors and latency.
+- `correlate` runs four windowed SPL queries through the Splunk MCP `splunk_run_query`
+  tool to answer what k6 client-side cannot: a rollup (overview), a timeline (when it
+  degraded), a by-endpoint breakdown (which route degraded), and the dominant server-side
+  error (why). It synthesizes the actionable findings, so the run can say "POST /api/visits
+  regressed: 21% 5xx, p95 285ms vs 2ms baseline, cause 'database is locked'", which the k6
+  summary alone never shows. Override the rollup per run with `splunk_spl`.
 - `report` has the model narrate the run as a tarot reading, one line per phase from
   the recorded facts, falling back to the static omens when the model is absent. Every
   upstream tool call is logged to `mcp_provenance`. The work-phases stay deterministic;
@@ -208,6 +217,7 @@ Each phase is a card the agent turns. Run `kassi arcana` for the full spread.
 | The Chariot (VII) | `scaffold` | the vehicle is assembled from the spec: a runnable scaffold takes shape |
 | The Magician (I) | `generate_script` | as above, so below: the agent authors the script atop the scaffold |
 | Justice (XI) | `validate_script` | the script is weighed; the unworthy is turned back |
+| Temperance (XIV) | `fix_script` | the flawed draft is tempered against k6's judgment until it holds |
 | The Tower (XVI) | `run_test` | load strikes the structure; what breaks is revealed |
 | The Hermit (IX) | `splunk_preflight` | a lantern into the index before the reading |
 | The Lovers (VI) | `correlate` | client and server joined over one window |
@@ -278,9 +288,17 @@ they run offline with no k6, Splunk, Ollama, or network.
 locally, seeding sample telemetry, and verifying the integration. The two helper scripts:
 
 ```bash
-uv run python scripts/seed_splunk.py          # index + HEC + sample data + verify the SPL kassi emits
+uv run python scripts/seed_splunk.py            # index + HEC + sample data + verify the SPL kassi emits
 uv run python scripts/verify_correlate_live.py  # drive the whole FSM; correlate hits live Splunk
+KASSI_LLM=anthropic envchain ai uv run python scripts/verify_petclinic.py  # the real-app root-cause demo
 ```
+
+`verify_petclinic.py` is the headline demo, nothing canned: it starts the
+[`examples/petclinic`](examples/petclinic) app (a healthy baseline plus a new
+`POST /api/visits` with a SQLite write-lock flaw that only bites under load, shipping
+access logs to Splunk's HEC), runs real k6 through the k6 MCP server, and reads the
+server-side regression back from Splunk: which endpoint, how bad, and the "database is
+locked" root cause k6 alone can't see.
 
 `scripts/dev_splunk_mcp.py` is a local stdio MCP bridge to Splunk REST, used only to
 exercise the correlate path without the official app. Production uses the official Splunk

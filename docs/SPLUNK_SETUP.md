@@ -101,3 +101,26 @@ returns the same server-side rollup through the official server as through the d
 
 Only the Splunkbase download and the UI token generation are manual; everything else is
 scripted.
+
+## The real-app root-cause demo
+
+`scripts/verify_petclinic.py` is the end-to-end demo with nothing canned. It:
+
+1. starts `examples/petclinic`, a FastAPI app with a healthy baseline (`GET /api/owners`,
+   `GET /api/vets`) and a new `POST /api/visits` that writes inside a held SQLite
+   `IMMEDIATE` transaction with no pooling, so it serializes and raises "database is locked"
+   under concurrency, the classic load-only regression. An access-log middleware ships one
+   event per request to the `web` index (`{path, method, status, response_time, db_time,
+   error_message}`);
+2. drives kassi with **real k6** through the k6 MCP server against the app (~25 VUs, 25s);
+3. reads the regression back from Splunk via the four `correlate` queries.
+
+```bash
+KASSI_LLM=anthropic envchain ai uv run python scripts/verify_petclinic.py
+```
+
+A verified run: k6 client-side saw 4461 requests, p95 278 ms, 7% failed. Splunk server-side
+localized it: `POST /api/visits` at 21% 5xx and p95 285 ms while `/api/owners` and `/api/vets`
+stayed at 0% and ~2 ms, with the dominant error "database is locked" (308x). The verdict folds
+that in: `server-side regression: /api/visits p95 285ms, 21% 5xx, cause 'database is locked'`.
+That root cause is what k6 alone cannot see.

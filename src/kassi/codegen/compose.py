@@ -31,28 +31,6 @@ _OPTIONS_BY_TAXONOMY = {
     ),
 }
 
-_HANDLE_SUMMARY = """
-export function handleSummary(data) {
-  const m = data.metrics || {};
-  const val = (name, key) => {
-    const x = m[name] && (m[name].values || m[name]);
-    return x ? x[key] : undefined;
-  };
-  const reqs = val('http_reqs', 'count');
-  const p95 = val('http_req_duration', 'p(95)');
-  const failed = val('http_req_failed', 'rate');
-  const checks = val('checks', 'rate');
-  const lines = [
-    'kassi summary',
-    '  requests:       ' + (reqs != null ? reqs : 0),
-    '  p(95) duration: ' + (p95 != null ? p95.toFixed(1) + ' ms' : 'n/a'),
-    '  failure rate:   ' + (failed != null ? (failed * 100).toFixed(2) + '%' : 'n/a'),
-    '  checks rate:    ' + (checks != null ? (checks * 100).toFixed(2) + '%' : 'n/a'),
-  ];
-  return { stdout: lines.join('\\n') + '\\n' };
-}
-"""
-
 
 def _resolve_ref(spec: dict, ref: str) -> dict:
     node: Any = spec
@@ -261,8 +239,7 @@ def compose(*, plan: Plan, openapi_spec: dict | None, endpoints: list[Endpoint],
         "  };",
         "",
         *blocks,
-        "  sleep(1);",
+        "  sleep(0.3);",
         "}",
-        _HANDLE_SUMMARY,
     ]
     return "\n".join(parts) + "\n"
