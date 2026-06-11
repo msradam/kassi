@@ -1,0 +1,38 @@
+[project]
+name = "kassi"
+version = "0.1.0"
+description = "Diff-driven load-test agent built on Burr + theodosia, with the Grafana k6 MCP server as upstream."
+authors = [
+    { name = "Adam Munawar Rahman", email = "msrahmanadam@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "httpx>=0.28.1",
+    "pydantic>=2.13.4",
+    "structlog>=26.1.0",
+    "theodosia>=0.4.2",
+]
+
+[project.scripts]
+kassi = "kassi.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.8",
+]
+
+[build-system]
+requires = ["uv_build>=0.11.14,<0.12.0"]
+build-backend = "uv_build"
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+
+[tool.ruff.lint]
+extend-select = ["I", "UP", "FURB", "B", "SIM"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
