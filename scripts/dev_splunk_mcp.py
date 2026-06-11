@@ -1,4 +1,4 @@
-"""LOCAL DEVELOPMENT ONLY — a minimal stdio MCP server that exposes the one Splunk
+"""LOCAL DEVELOPMENT ONLY: a minimal stdio MCP server that exposes the one Splunk
 tool kassi calls (`splunk_run_query`) against a local Splunk instance over REST.
 
 Production kassi uses the official Splunk MCP Server (Splunkbase 7931) via
@@ -12,7 +12,7 @@ Wire it as kassi's splunk upstream for local testing:
     export KASSI_SPLUNK_MCP_CMD=uv
     export KASSI_SPLUNK_MCP_ENDPOINT=run            # placeholder; bridge ignores it
     export KASSI_SPLUNK_TOKEN=dev                    # placeholder
-    # then point upstream args at this file — see scripts/verify_correlate_live.py
+    # then point upstream args at this file (see scripts/verify_correlate_live.py)
 
 Env:
     SPLUNK_MGMT  https://localhost:8089

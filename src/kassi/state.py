@@ -1,6 +1,6 @@
 """Typed values that flow through the FSM state.
 
-Burr state holds plain JSON-serialisable values (so the theodosia ledger can
+Burr state holds plain JSON-serialisable values (so the Theodosia ledger can
 record every snapshot). These models are used at action boundaries for
 validation, then dumped to / loaded from dicts.
 """

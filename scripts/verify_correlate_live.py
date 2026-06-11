@@ -25,7 +25,7 @@ from dotenv import load_dotenv
 from theodosia import UpstreamManager, bind_upstream
 from theodosia.upstream import reset_upstream
 
-import kassi.app as kassi_app
+from kassi import arcana
 from kassi.app import build_application
 from kassi.upstream import splunk_configured, splunk_upstream_config
 
@@ -51,6 +51,18 @@ K6_FAKE = {
             "http_req_failed": {"rate": 0.06},
             "checks": {"passes": 188, "fails": 12, "rate": 0.94},
         },
+    },
+    "list_sections": {
+        "tree": [
+            {"slug": "using-k6/http-requests", "title": "HTTP Requests", "child_count": 0},
+            {"slug": "using-k6/thresholds", "title": "Thresholds", "child_count": 0},
+            {"slug": "using-k6/checks", "title": "Checks", "child_count": 0},
+            {"slug": "using-k6/scenarios", "title": "Scenarios", "child_count": 0},
+        ]
+    },
+    "get_documentation": {
+        "section": {"slug": "using-k6/thresholds", "title": "Thresholds"},
+        "content": "---\ntitle: 'Thresholds'\n---\n\n# Thresholds\n\nThresholds are pass/fail criteria for the system under test.",
     },
 }
 
@@ -103,18 +115,14 @@ class _RoutingManager:
         return await self._splunk.call(server, tool, args)
 
 
-class _FakeLLM:
-    def generate(self, *, system: str, user: str, stop=None, format=None) -> str:
-        return json.dumps({"test_taxonomy": "load", "parameterization": "static_examples", "endpoints": []})
-
-
 async def main() -> None:
     load_dotenv(ROOT / ".env")
 
-    def _fake_llm(*_a, **_k):
-        return _FakeLLM()
-
-    kassi_app.OllamaLLM = _fake_llm  # type: ignore[assignment]
+    backend = os.environ.get("KASSI_LLM", "ollama").strip().lower()
+    model = os.environ.get(
+        "KASSI_MODEL", "claude-haiku-4-5" if backend == "anthropic" else "qwen2.5-coder:7b"
+    )
+    print(f"llm backend:     {backend} ({model}); falls back to a default plan if unreachable")
 
     if splunk_configured():
         print("splunk upstream: OFFICIAL Splunk MCP Server (from .env)")
@@ -147,12 +155,31 @@ async def main() -> None:
 
     report = state["report"]
     print("verdict:        ", report["verdict"])
+    plan = report["plan"] or {}
+    print(
+        "plan (from llm): ",
+        f"taxonomy={plan.get('test_taxonomy')} parameterization={plan.get('parameterization')} "
+        f"endpoints={len(plan.get('endpoints') or [])}",
+    )
     print("splunk_enabled: ", report["splunk_enabled"])
     print("k6 http_reqs:   ", report["run_result"]["http_reqs"])
     corr = report["correlation"]
     print("correlation SPL:", corr["spl"])
     print("correlation OK: ", corr["available"])
-    print("server-side rows:", json.dumps(corr["rows"], indent=2))
+    print("server-side rows:", json.dumps(corr["rows"]))
+
+    prov = report["mcp_provenance"]
+    print("k6 doc refs:    ", [r["slug"] for r in prov["k6_doc_refs"]])
+    pf = prov["splunk_preflight"]
+    if pf:
+        print(
+            "splunk preflight:",
+            f"index={pf['index']} exists={pf['exists']} events={pf['event_count']} "
+            f"sourcetypes={[s['sourcetype'] for s in pf['sourcetypes']]} "
+            f"splunk={pf['server'].get('version')}",
+        )
+    print("mcp tool calls: ", [f"{c['server']}.{c['tool']}={c['status']}" for c in prov["tool_calls"]])
+    print("the reading:    ", arcana.reading(report["verdict"]))
 
 
 if __name__ == "__main__":

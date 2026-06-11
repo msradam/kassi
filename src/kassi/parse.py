@@ -94,6 +94,109 @@ def summarize_correlation(data: Any) -> list[dict[str, Any]]:
     return []
 
 
+def _to_int(value: Any) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+_DOC_TERMS = ("http-requests", "thresholds", "checks", "scenarios")
+
+
+def flatten_sections(payload: Any) -> list[dict[str, str]]:
+    """Flatten a k6 MCP `list_sections` tree to ``[{slug, title}, ...]``."""
+    tree = payload.get("tree") if isinstance(payload, dict) else payload
+    out: list[dict[str, str]] = []
+
+    def walk(nodes: Any) -> None:
+        if not isinstance(nodes, list):
+            return
+        for node in nodes:
+            if not isinstance(node, dict):
+                continue
+            out.append({"slug": str(node.get("slug", "")), "title": str(node.get("title", ""))})
+            walk(node.get("children"))
+
+    walk(tree)
+    return out
+
+
+def select_doc_slugs(payload: Any, limit: int = 4) -> list[str]:
+    """Pick the doc slugs for the k6 constructs the composer emits, from a live tree."""
+    nodes = flatten_sections(payload)
+    picked: list[str] = []
+    for term in _DOC_TERMS:
+        for node in nodes:
+            slug = node["slug"]
+            if term in slug.lower() and slug not in picked:
+                picked.append(slug)
+                break
+    return picked[:limit]
+
+
+def _doc_excerpt(content: Any, limit: int = 200) -> str:
+    if not isinstance(content, str):
+        return ""
+    text = content
+    if text.startswith("---"):
+        end = text.find("---", 3)
+        if end != -1:
+            text = text[end + 3 :]
+    for line in text.splitlines():
+        stripped = line.strip().lstrip("#").strip()
+        if stripped:
+            return stripped[:limit]
+    return ""
+
+
+def parse_documentation(slug: str, payload: Any) -> dict[str, str]:
+    """Turn a k6 MCP `get_documentation` payload into a compact citation."""
+    section = payload.get("section", {}) if isinstance(payload, dict) else {}
+    content = payload.get("content", "") if isinstance(payload, dict) else ""
+    return {
+        "slug": slug,
+        "title": str(section.get("title") or slug) if isinstance(section, dict) else slug,
+        "excerpt": _doc_excerpt(content),
+    }
+
+
+def parse_index_facts(index_name: str, index_info: Any) -> dict[str, Any]:
+    """Extract index facts from a Splunk MCP `splunk_get_index_info` payload."""
+    rows = summarize_correlation(index_info)
+    row = rows[0] if rows else {}
+    return {
+        "index": index_name,
+        "exists": bool(row),
+        "event_count": _to_int(row.get("totalEventCount")),
+        "size_mb": _to_int(row.get("currentDBSizeMB")),
+        "datatype": row.get("datatype"),
+    }
+
+
+def parse_sourcetypes(metadata: Any) -> list[dict[str, Any]]:
+    """Extract sourcetypes from a Splunk MCP `splunk_get_metadata` payload."""
+    return [
+        {
+            "sourcetype": r.get("sourcetype"),
+            "count": _to_int(r.get("totalCount")),
+            "last_seen": r.get("lastTimeIso"),
+        }
+        for r in summarize_correlation(metadata)
+    ]
+
+
+def parse_splunk_info(info: Any) -> dict[str, Any]:
+    """Extract version/health from a Splunk MCP `splunk_get_info` payload."""
+    rows = summarize_correlation(info)
+    row = rows[0] if rows else {}
+    return {
+        "version": row.get("version"),
+        "server_name": row.get("serverName"),
+        "health": row.get("health_info"),
+    }
+
+
 def _metric_value(metrics: dict, name: str, *keys: str) -> float | None:
     """Pull one number from a k6 metric, tolerating flat / count / values shapes."""
     v = metrics.get(name)

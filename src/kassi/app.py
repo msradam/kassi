@@ -1,24 +1,27 @@
-"""The kassi workflow as a Burr state machine, served over MCP by theodosia.
+"""The kassi workflow as a Burr state machine, served over MCP by Theodosia.
 
 An agent drives it one ``step`` at a time. The graph's edges are the only legal
 moves; illegal steps are refused with ``valid_next_actions`` and recorded. k6 work
 is delegated to the Grafana k6 MCP server and the post-run correlation to the
-Splunk MCP Server, both via ``call_upstream`` — the driving agent never sees those
+Splunk MCP Server, both via ``call_upstream``. The driving agent never sees those
 servers, only kassi's single ``step`` tool.
 
 Flow:
     select_mode ─diff──→ read_diff → extract_endpoints ┐
-                └intent─→ parse_intent ────────────────┴→ generate_script
+                └intent─→ parse_intent ────────────────┴→ doc_lookup → generate_script
     generate_script → validate_script ⇄ (retry) generate_script
-    validate_script → run_test ─splunk?─→ correlate → report
-                              └─else────────────────→ report   (also on give-up)
+    validate_script → run_test ─splunk?─→ splunk_preflight → correlate → report
+                              └─else──────────────────────────────────→ report  (also on give-up)
+
+``doc_lookup`` (k6 MCP docs) and ``splunk_preflight`` (Splunk index/metadata/info) are
+MCP-native phases: both degrade gracefully via ``safe_upstream`` and record every
+upstream tool call to ``mcp_calls`` for the report's provenance block.
 """
 
 from __future__ import annotations
 
 import asyncio
 import json
-import os
 import time
 from pathlib import Path
 from typing import Any
@@ -29,11 +32,16 @@ from theodosia import call_upstream, mount, safe_upstream, tracker
 
 from kassi import codegen, parse
 from kassi.githost import get_diff
-from kassi.llm import DEFAULT_MODEL, OllamaLLM
+from kassi.llm import make_llm
 from kassi.state import MAX_FIX_ATTEMPTS, Endpoint
 from kassi.upstream import K6_SERVER, SPLUNK_SERVER, splunk_configured, upstream
 
 log = structlog.get_logger()
+
+
+def _record(calls: list[dict[str, str]], server: str, tool: str, status: str) -> list[dict[str, str]]:
+    """Append one upstream tool call to the provenance log (immutably)."""
+    return [*calls, {"server": server, "tool": tool, "status": status}]
 
 
 def _load_spec(repo_path: str | None) -> dict[str, Any] | None:
@@ -131,6 +139,30 @@ async def parse_intent(state: State) -> State:
     )
 
 
+@action(reads=["endpoints", "mcp_calls"], writes=["doc_refs", "mcp_calls", "stage"])
+async def doc_lookup(state: State) -> State:
+    """Consult the k6 MCP documentation for the constructs kassi emits (HTTP requests, thresholds, checks, scenarios) and record version-grounded citations. Non-blocking: degrades to no references when the docs are unavailable."""
+    calls = state["mcp_calls"]
+    if not state["endpoints"]:
+        return state.update(doc_refs=[], mcp_calls=calls, stage="documented")
+
+    refs: list[dict[str, str]] = []
+    sections = await safe_upstream(
+        "k6_docs", K6_SERVER, "list_sections", {"root_slug": "using-k6", "depth": 2}, expect="dict"
+    )
+    calls = _record(calls, K6_SERVER, "list_sections", sections.status)
+    if sections.usable:
+        for slug in parse.select_doc_slugs(sections.data):
+            doc = await safe_upstream(
+                "k6_docs", K6_SERVER, "get_documentation", {"slug": slug}, expect="dict"
+            )
+            calls = _record(calls, K6_SERVER, "get_documentation", doc.status)
+            if doc.usable:
+                refs.append(parse.parse_documentation(slug, doc.data))
+    log.info("doc_lookup_done", refs=len(refs))
+    return state.update(doc_refs=refs, mcp_calls=calls, stage="documented")
+
+
 @action(
     reads=[
         "endpoints",
@@ -149,7 +181,7 @@ async def generate_script(state: State) -> State:
     if not endpoints:
         return state.update(stage="failed", error="generate_script: no endpoints to test")
 
-    llm = OllamaLLM(model=os.environ.get("KASSI_MODEL", DEFAULT_MODEL))
+    llm = make_llm()
     plan = await asyncio.to_thread(
         codegen.fill_plan,
         endpoints=endpoints,
@@ -173,31 +205,47 @@ async def generate_script(state: State) -> State:
     )
 
 
-@action(reads=["generated_script", "fix_attempts"], writes=["validation_error", "stage"])
+@action(
+    reads=["generated_script", "fix_attempts", "mcp_calls"], writes=["validation_error", "stage", "mcp_calls"]
+)
 async def validate_script(state: State) -> State:
     """Validate the script via the k6 MCP `validate_script` tool (1 VU, 1 iteration)."""
+    calls = state["mcp_calls"]
     try:
         payload = await call_upstream(K6_SERVER, "validate_script", {"script": state["generated_script"]})
     except Exception as exc:
-        return state.update(validation_error=f"k6 MCP unavailable: {exc}", stage="failed_validation")
+        return state.update(
+            validation_error=f"k6 MCP unavailable: {exc}",
+            stage="failed_validation",
+            mcp_calls=_record(calls, K6_SERVER, "validate_script", "error"),
+        )
 
+    calls = _record(calls, K6_SERVER, "validate_script", "ok")
     err = parse.parse_validation(payload)
     if err is None:
-        return state.update(validation_error=None, stage="validated")
+        return state.update(validation_error=None, stage="validated", mcp_calls=calls)
     if state["fix_attempts"] < MAX_FIX_ATTEMPTS:
         log.warning("validation_failed_retrying", attempts=state["fix_attempts"], error=err)
-        return state.update(validation_error=err, stage="needs_fix")
-    return state.update(validation_error=err, stage="failed_validation")
+        return state.update(validation_error=err, stage="needs_fix", mcp_calls=calls)
+    return state.update(validation_error=err, stage="failed_validation", mcp_calls=calls)
 
 
-@action(reads=["generated_script"], writes=["run_result", "run_started_at", "run_ended_at", "stage", "error"])
+@action(
+    reads=["generated_script", "mcp_calls"],
+    writes=["run_result", "run_started_at", "run_ended_at", "stage", "error", "mcp_calls"],
+)
 async def run_test(state: State) -> State:
     """Execute the load test via the k6 MCP `run_script` tool and parse the metrics."""
     started = time.time()
     try:
         payload = await call_upstream(K6_SERVER, "run_script", {"script": state["generated_script"]})
     except Exception as exc:
-        return state.update(run_result=None, stage="failed", error=f"k6 MCP run failed: {exc}")
+        return state.update(
+            run_result=None,
+            stage="failed",
+            error=f"k6 MCP run failed: {exc}",
+            mcp_calls=_record(state["mcp_calls"], K6_SERVER, "run_script", "error"),
+        )
     ended = time.time()
     result = parse.parse_run(payload)
     log.info("run_test_ok", reqs=result.http_reqs, exit_code=result.exit_code)
@@ -207,12 +255,54 @@ async def run_test(state: State) -> State:
         run_ended_at=ended,
         stage="ran",
         error=None,
+        mcp_calls=_record(state["mcp_calls"], K6_SERVER, "run_script", "ok"),
     )
 
 
 @action(
-    reads=["splunk_index", "run_started_at", "run_ended_at"],
-    writes=["correlation", "stage"],
+    reads=["splunk_index", "run_started_at", "run_ended_at", "mcp_calls"],
+    writes=["splunk_preflight", "mcp_calls", "stage"],
+)
+async def splunk_preflight(state: State) -> State:
+    """Before correlating, verify the target Splunk index exists and capture its event count, sourcetypes, and the Splunk version via the Splunk MCP `splunk_get_info` / `splunk_get_index_info` / `splunk_get_metadata` tools. Non-blocking: correlate still runs if a probe fails."""
+    index = state["splunk_index"]
+    earliest = int(state["run_started_at"] or (time.time() - 300))
+    latest = int(state["run_ended_at"] or time.time())
+    calls = state["mcp_calls"]
+
+    info = await safe_upstream("splunk_info", SPLUNK_SERVER, "splunk_get_info", {}, expect="dict")
+    calls = _record(calls, SPLUNK_SERVER, "splunk_get_info", info.status)
+    idx = await safe_upstream(
+        "splunk_index_info", SPLUNK_SERVER, "splunk_get_index_info", {"index_name": index}, expect="dict"
+    )
+    calls = _record(calls, SPLUNK_SERVER, "splunk_get_index_info", idx.status)
+    meta = await safe_upstream(
+        "splunk_metadata",
+        SPLUNK_SERVER,
+        "splunk_get_metadata",
+        {"type": "sourcetypes", "index": index, "earliest_time": str(earliest), "latest_time": str(latest)},
+        expect="dict",
+    )
+    calls = _record(calls, SPLUNK_SERVER, "splunk_get_metadata", meta.status)
+
+    facts = parse.parse_index_facts(index, idx.data if idx.usable else None)
+    preflight = {
+        **facts,
+        "sourcetypes": parse.parse_sourcetypes(meta.data) if meta.usable else [],
+        "server": parse.parse_splunk_info(info.data) if info.usable else {},
+    }
+    log.info(
+        "splunk_preflight_done",
+        index=index,
+        exists=facts["exists"],
+        sourcetypes=len(preflight["sourcetypes"]),
+    )
+    return state.update(splunk_preflight=preflight, mcp_calls=calls, stage="preflighted")
+
+
+@action(
+    reads=["splunk_index", "run_started_at", "run_ended_at", "mcp_calls"],
+    writes=["correlation", "mcp_calls", "stage"],
 )
 async def correlate(state: State, splunk_spl: str = "") -> State:
     """Query Splunk (via the Splunk MCP `splunk_run_query` tool) for the target's server-side telemetry over the exact test window, and pair it with the k6 client-side metrics. Pass `splunk_spl` to override the default rollup."""
@@ -231,7 +321,11 @@ async def correlate(state: State, splunk_spl: str = "") -> State:
         "detail": result.detail,
     }
     log.info("correlate_done", status=result.status, rows=len(correlation["rows"]))
-    return state.update(correlation=correlation, stage="correlated")
+    return state.update(
+        correlation=correlation,
+        mcp_calls=_record(state["mcp_calls"], SPLUNK_SERVER, "splunk_run_query", result.status),
+        stage="correlated",
+    )
 
 
 @action(
@@ -244,6 +338,9 @@ async def correlate(state: State, splunk_spl: str = "") -> State:
         "error",
         "mode",
         "splunk_enabled",
+        "doc_refs",
+        "splunk_preflight",
+        "mcp_calls",
     ],
     writes=["report", "stage"],
 )
@@ -258,6 +355,11 @@ async def report(state: State) -> State:
         "run_result": state["run_result"],
         "splunk_enabled": state["splunk_enabled"],
         "correlation": state["correlation"],
+        "mcp_provenance": {
+            "tool_calls": state["mcp_calls"],
+            "k6_doc_refs": state["doc_refs"],
+            "splunk_preflight": state["splunk_preflight"],
+        },
         "verdict": _verdict(state),
     }
     return state.update(report=summary, stage="done")
@@ -280,9 +382,11 @@ def build_application():
             read_diff=read_diff,
             extract_endpoints=extract_endpoints,
             parse_intent=parse_intent,
+            doc_lookup=doc_lookup,
             generate_script=generate_script,
             validate_script=validate_script,
             run_test=run_test,
+            splunk_preflight=splunk_preflight,
             correlate=correlate,
             report=report,
         )
@@ -291,17 +395,19 @@ def build_application():
             ("select_mode", "parse_intent", Condition.expr("stage == 'selected' and mode == 'intent'")),
             ("read_diff", "report", Condition.expr("stage == 'failed'")),
             ("read_diff", "extract_endpoints", Condition.expr("stage == 'diffed'")),
-            ("extract_endpoints", "generate_script", Condition.expr("stage == 'scoped'")),
+            ("extract_endpoints", "doc_lookup", Condition.expr("stage == 'scoped'")),
             ("parse_intent", "report", Condition.expr("stage == 'failed'")),
-            ("parse_intent", "generate_script", Condition.expr("stage == 'scoped'")),
+            ("parse_intent", "doc_lookup", Condition.expr("stage == 'scoped'")),
+            ("doc_lookup", "generate_script", Condition.expr("stage == 'documented'")),
             ("generate_script", "report", Condition.expr("stage == 'failed'")),
             ("generate_script", "validate_script", Condition.expr("stage == 'generated'")),
             ("validate_script", "generate_script", Condition.expr("stage == 'needs_fix'")),
             ("validate_script", "run_test", Condition.expr("stage == 'validated'")),
             ("validate_script", "report", Condition.expr("stage == 'failed_validation'")),
-            ("run_test", "correlate", Condition.expr("stage == 'ran' and splunk_enabled")),
+            ("run_test", "splunk_preflight", Condition.expr("stage == 'ran' and splunk_enabled")),
             ("run_test", "report", Condition.expr("stage == 'ran' and not splunk_enabled")),
             ("run_test", "report", Condition.expr("stage == 'failed'")),
+            ("splunk_preflight", "correlate", Condition.expr("stage == 'preflighted'")),
             ("correlate", "report", Condition.expr("stage == 'correlated'")),
         )
         .with_state(
@@ -316,6 +422,7 @@ def build_application():
             diff_text=None,
             endpoints=[],
             openapi_spec=None,
+            doc_refs=[],
             plan=None,
             generated_script=None,
             validation_error=None,
@@ -323,7 +430,9 @@ def build_application():
             run_result=None,
             run_started_at=None,
             run_ended_at=None,
+            splunk_preflight=None,
             correlation=None,
+            mcp_calls=[],
             report=None,
             error=None,
         )

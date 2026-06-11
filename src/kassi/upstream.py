@@ -1,24 +1,27 @@
-"""Upstream MCP servers wired into theodosia.
+"""Upstream MCP servers wired into Theodosia.
 
 kassi orchestrates two MCP servers from one agent-driven state machine:
 
-* **k6** — the official Grafana k6 MCP server. Validates and runs the generated
-  load test. Always configured.
-* **splunk** — the official Splunk MCP Server (Splunkbase 7931). After a run, the
+* **k6**: the official Grafana k6 MCP server. Validates and runs the generated
+  load test. Always configured. k6 2.0 ships this server as the ``k6 x mcp``
+  subcommand (auto-provisioned on first run), so the single k6 binary is the
+  only install needed; the standalone ``mcp-k6`` binary and the Docker image are
+  still selectable.
+* **splunk**: the official Splunk MCP Server (Splunkbase 7931). After a run, the
   FSM queries Splunk for the target service's server-side telemetry over the test
   window and correlates it with the client-side k6 metrics. Configured only when
   the endpoint + token env vars are set; absent that, kassi degrades gracefully to
   k6-only.
 
-theodosia maps a ``{"command": ..., "args": [...]}`` dict to a stdio transport and
+Theodosia maps a ``{"command": ..., "args": [...]}`` dict to a stdio transport and
 spawns the server as a subprocess; action bodies reach a server with
 ``call_upstream(server, tool, args)``. The agent driving kassi only ever sees
 kassi's single ``step`` tool, never these servers.
 
 Install / configure:
-    # k6 (one of)
-    brew tap grafana/grafana && brew install mcp-k6
-    docker pull grafana/mcp-k6:latest        # then set KASSI_K6_DOCKER=1
+    # k6: install k6 2.0+; the MCP server is the built-in `k6 x mcp` subcommand,
+    # provisioned automatically on first run. No separate install needed.
+    # Standalone binary or Docker are opt-in (see Env overrides).
 
     # Splunk: install the MCP Server app on your Splunk instance, generate an
     # encrypted token, copy the endpoint, then:
@@ -26,8 +29,9 @@ Install / configure:
     export KASSI_SPLUNK_TOKEN="<encrypted-token>"
 
 Env overrides:
-    KASSI_K6_MCP / KASSI_K6_MCP_ARGS    native k6 server command + args (default "mcp-k6")
-    KASSI_K6_DOCKER / KASSI_K6_IMAGE    run the k6 server via Docker
+    KASSI_K6_CMD                        k6 MCP server command line (default "k6 x mcp";
+                                        set to "mcp-k6" for the standalone binary)
+    KASSI_K6_DOCKER / KASSI_K6_IMAGE    run the k6 server via Docker instead
     KASSI_SPLUNK_MCP_ENDPOINT           streamable-HTTP endpoint of the Splunk MCP Server
     KASSI_SPLUNK_TOKEN                  encrypted MCP token (sent as `Authorization: Bearer`)
     KASSI_SPLUNK_MCP_CMD                stdio bridge command (default "npx")
@@ -36,10 +40,13 @@ Env overrides:
 from __future__ import annotations
 
 import os
+import shlex
 from typing import Any
 
 K6_SERVER = "k6"
 SPLUNK_SERVER = "splunk"
+
+DEFAULT_K6_CMD = "k6 x mcp"
 
 
 def k6_upstream_config() -> dict[str, Any]:
@@ -51,9 +58,22 @@ def k6_upstream_config() -> dict[str, Any]:
             "command": "docker",
             "args": ["run", "--rm", "-i", "--add-host=host.docker.internal:host-gateway", image],
         }
-    command = os.environ.get("KASSI_K6_MCP", "mcp-k6")
-    extra = os.environ.get("KASSI_K6_MCP_ARGS", "").split()
-    return {"command": command, "args": extra}
+    # k6 2.0's `k6 x mcp` is the same server as the standalone `mcp-k6` binary,
+    # delivered as a subcommand extension. Both default to stdio transport, which
+    # is what Theodosia spawns. Override the whole command line with KASSI_K6_CMD.
+    cmd = shlex.split(os.environ.get("KASSI_K6_CMD", DEFAULT_K6_CMD))
+    return {"command": cmd[0], "args": cmd[1:]}
+
+
+def k6_warm_command() -> list[str]:
+    """Argv that provisions and exits, to warm the `k6 x mcp` extension cache.
+
+    The first `k6 x mcp` invocation downloads and caches a custom k6 binary
+    (~5s); appending ``--help`` triggers that provisioning, then exits without
+    starting the server. Harmless for the standalone binary and Docker forms too.
+    """
+    cfg = k6_upstream_config()
+    return [cfg["command"], *cfg["args"], "--help"]
 
 
 def splunk_configured() -> bool:
@@ -65,7 +85,7 @@ def splunk_upstream_config() -> dict[str, Any] | None:
 
     The official Splunk client config runs ``npx -y mcp-remote <endpoint> --header
     'Authorization: Bearer <token>'`` to bridge stdio to the server's streamable-HTTP
-    transport. theodosia spawns that command directly as a stdio upstream, so the
+    transport. Theodosia spawns that command directly as a stdio upstream, so the
     Splunk tool names (``splunk_run_query`` etc.) reach action bodies un-prefixed.
     """
     endpoint = os.environ.get("KASSI_SPLUNK_MCP_ENDPOINT")

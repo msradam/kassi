@@ -28,6 +28,18 @@ K6_RESPONSES = {
                 "checks": {"passes": 120, "fails": 0, "rate": 1.0},
             },
         },
+        "list_sections": {
+            "tree": [
+                {"slug": "using-k6/http-requests", "title": "HTTP Requests", "child_count": 0},
+                {"slug": "using-k6/thresholds", "title": "Thresholds", "child_count": 0},
+                {"slug": "using-k6/checks", "title": "Checks", "child_count": 0},
+                {"slug": "using-k6/scenarios", "title": "Scenarios", "child_count": 0},
+            ]
+        },
+        "get_documentation": {
+            "section": {"slug": "using-k6/thresholds", "title": "Thresholds"},
+            "content": "---\ntitle: 'Thresholds'\n---\n\n# Thresholds\n\nThresholds are pass/fail criteria for the system under test.",
+        },
     }
 }
 
@@ -38,7 +50,18 @@ K6_AND_SPLUNK_RESPONSES = {
             "results": [
                 {"total_events": "4210", "server_errors": "7", "client_errors": "0", "avg_response_ms": "9.4"}
             ]
-        }
+        },
+        "splunk_get_info": {"results": [{"version": "10.4.0", "serverName": "Mac", "health_info": "green"}]},
+        "splunk_get_index_info": {
+            "results": [
+                {"title": "web", "totalEventCount": "640", "currentDBSizeMB": "1", "datatype": "event"}
+            ]
+        },
+        "splunk_get_metadata": {
+            "results": [
+                {"sourcetype": "access_json", "totalCount": "640", "lastTimeIso": "2026-06-11T10:17:10Z"}
+            ]
+        },
     },
 }
 
@@ -50,7 +73,7 @@ class _FakeLLM:
 
 @pytest.fixture(autouse=True)
 def _offline_llm(monkeypatch):
-    monkeypatch.setattr(kassi_app, "OllamaLLM", lambda *a, **k: _FakeLLM())
+    monkeypatch.setattr(kassi_app, "make_llm", lambda *a, **k: _FakeLLM())
 
 
 async def test_full_run_intent_mode():
@@ -78,6 +101,18 @@ async def test_full_run_intent_mode():
     assert "import" in script and "openapi-to-k6" not in script
     assert fake.calls_to("k6", "run_script")
 
+    # doc_lookup consulted the k6 MCP docs and recorded version-grounded citations.
+    assert fake.calls_to("k6", "list_sections")
+    provenance = report["mcp_provenance"]
+    assert provenance["k6_doc_refs"], "expected k6 doc references"
+    assert {r["slug"] for r in provenance["k6_doc_refs"]} & {"using-k6/thresholds", "using-k6/checks"}
+    tools_called = {(c["server"], c["tool"]) for c in provenance["tool_calls"]}
+    assert ("k6", "list_sections") in tools_called
+    assert ("k6", "validate_script") in tools_called
+    assert ("k6", "run_script") in tools_called
+    # Splunk was not configured, so no preflight ran.
+    assert provenance["splunk_preflight"] is None
+
 
 async def test_splunk_correlation_when_configured(monkeypatch):
     monkeypatch.setenv("KASSI_SPLUNK_MCP_ENDPOINT", "https://splunk.example/mcp")
@@ -104,6 +139,19 @@ async def test_splunk_correlation_when_configured(monkeypatch):
     queries = fake.calls_to("splunk", "splunk_run_query")
     assert len(queries) == 1
     assert "earliest=" in queries[0].args["query"]
+
+    # splunk_preflight verified the index and captured sourcetypes + version before correlating.
+    assert fake.calls_to("splunk", "splunk_get_index_info")
+    preflight = report["mcp_provenance"]["splunk_preflight"]
+    assert preflight["index"] == "web"
+    assert preflight["exists"] is True
+    assert preflight["event_count"] == 640
+    assert preflight["sourcetypes"][0]["sourcetype"] == "access_json"
+    assert preflight["server"]["version"] == "10.4.0"
+    tools_called = {(c["server"], c["tool"]) for c in report["mcp_provenance"]["tool_calls"]}
+    assert ("splunk", "splunk_get_info") in tools_called
+    assert ("splunk", "splunk_get_metadata") in tools_called
+    assert ("splunk", "splunk_run_query") in tools_called
 
 
 async def test_enforcement_refuses_illegal_first_step():

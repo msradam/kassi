@@ -1,4 +1,4 @@
-"""LocalGitHost — diff reader via subprocess (the one non-k6 shell-out kassi keeps)."""
+"""LocalGitHost: diff reader via subprocess (the one non-k6 shell-out kassi keeps)."""
 
 from __future__ import annotations
 

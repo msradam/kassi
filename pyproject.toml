@@ -1,7 +1,7 @@
 [project]
 name = "kassi"
 version = "0.1.0"
-description = "Diff-driven load-test agent built on Burr + theodosia, with the Grafana k6 MCP server as upstream."
+description = "Divinate your stack's performance: a diff/intent-driven load-test + Splunk observability agent on Burr + Theodosia."
 authors = [
     { name = "Adam Munawar Rahman", email = "msrahmanadam@gmail.com" }
 ]

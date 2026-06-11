@@ -1,4 +1,4 @@
-"""Typed ``Plan`` — the only thing the LLM is allowed to author.
+"""Typed ``Plan``: the only thing the LLM is allowed to author.
 
 If a field is here, the model picks from a closed set. Everything structural
 (the k6 source itself) is decided by the composer.
