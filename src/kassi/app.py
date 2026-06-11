@@ -8,14 +8,18 @@ servers, only kassi's single ``step`` tool.
 
 Flow:
     select_mode ─diff──→ read_diff → extract_endpoints ┐
-                └intent─→ parse_intent ────────────────┴→ doc_lookup → generate_script
+                └intent─→ parse_intent ────────────────┴→ doc_lookup → scaffold → generate_script
     generate_script → validate_script ⇄ (retry) generate_script
     validate_script → run_test ─splunk?─→ splunk_preflight → correlate → report
                               └─else──────────────────────────────────→ report  (also on give-up)
 
+``scaffold`` composes a deterministic k6 baseline from the OpenAPI spec; ``generate_script``
+then has the model author the final script on top of it, guided by k6's own
+``generate_script`` MCP prompt, and falls back to the scaffold when the model is absent.
 ``doc_lookup`` (k6 MCP docs) and ``splunk_preflight`` (Splunk index/metadata/info) are
-MCP-native phases: both degrade gracefully via ``safe_upstream`` and record every
-upstream tool call to ``mcp_calls`` for the report's provenance block.
+MCP-native phases: both degrade gracefully via ``safe_upstream`` and record every upstream
+tool call to ``mcp_calls`` for the report's provenance. ``report`` narrates the run with the
+model, themed as a tarot reading (falling back to the static omens when the model is absent).
 """
 
 from __future__ import annotations
@@ -30,9 +34,10 @@ import structlog
 from burr.core import ApplicationBuilder, Condition, State, action
 from theodosia import call_upstream, mount, safe_upstream, tracker
 
-from kassi import codegen, parse
+from kassi import arcana, codegen, parse
 from kassi.githost import get_diff
-from kassi.llm import make_llm
+from kassi.k6gen import fetch_k6_generation_guidance
+from kassi.llm import LLMError, make_llm
 from kassi.state import MAX_FIX_ATTEMPTS, Endpoint
 from kassi.upstream import K6_SERVER, SPLUNK_SERVER, splunk_configured, upstream
 
@@ -164,49 +169,69 @@ async def doc_lookup(state: State) -> State:
 
 
 @action(
-    reads=[
-        "endpoints",
-        "openapi_spec",
-        "diff_text",
-        "user_intent",
-        "target_base_url",
-        "fix_attempts",
-        "validation_error",
-    ],
-    writes=["plan", "generated_script", "stage", "fix_attempts", "error"],
+    reads=["endpoints", "openapi_spec", "target_base_url"],
+    writes=["plan", "scaffold_script", "stage", "error"],
 )
-async def generate_script(state: State) -> State:
-    """Fill the plan with the LLM, then compose a single self-contained k6 script."""
+async def scaffold(state: State) -> State:
+    """Compose a deterministic, self-contained k6 scaffold from the OpenAPI spec (no model): per-endpoint requests with sample bodies, the baked base URL, and load options. This is the runnable baseline the next step builds on."""
     endpoints = [Endpoint(**e) for e in state["endpoints"]]
     if not endpoints:
-        return state.update(stage="failed", error="generate_script: no endpoints to test")
+        return state.update(stage="failed", error="scaffold: no endpoints to test")
 
-    llm = make_llm()
-    plan = await asyncio.to_thread(
-        codegen.fill_plan,
-        endpoints=endpoints,
-        diff_text=state["diff_text"],
-        user_intent=state["user_intent"],
-        llm=llm,
-    )
+    plan = codegen.default_plan(endpoints)
     script = codegen.compose(
         plan=plan,
         openapi_spec=state["openapi_spec"],
         endpoints=endpoints,
         base_url=state["target_base_url"],
     )
+    log.info("scaffold_done", endpoints=len(endpoints))
+    return state.update(plan=plan.model_dump(), scaffold_script=script, stage="scaffolded", error=None)
+
+
+@action(
+    reads=["scaffold_script", "endpoints", "user_intent", "fix_attempts", "validation_error", "mcp_calls"],
+    writes=["generated_script", "stage", "fix_attempts", "mcp_calls"],
+)
+async def generate_script(state: State) -> State:
+    """Author the final k6 script on top of the scaffold, using k6's own `generate_script` MCP prompt and best-practices to guide the model. Falls back to the scaffold when the model or guidance is unavailable."""
+    scaffold_script = state["scaffold_script"]
+    endpoints = [Endpoint(**e) for e in state["endpoints"]]
+    description = parse.build_generation_description(
+        endpoints, state["user_intent"], scaffold_script, state["validation_error"]
+    )
+    calls = state["mcp_calls"]
+
+    guidance = await fetch_k6_generation_guidance(description)
+    calls = _record(calls, K6_SERVER, "generate_script(prompt)", "ok" if guidance else "error")
+    if guidance:
+        system = guidance + "\n\nReturn ONLY the k6 script. No prose, no markdown fences."
+    else:
+        system = "You are a k6 expert. Return ONLY a single self-contained k6 script. No prose, no markdown fences."
+
+    script = ""
+    try:
+        raw = await asyncio.to_thread(make_llm().generate, system=system, user=description)
+        script = parse.extract_script(raw)
+    except LLMError as exc:
+        log.warning("generate_script_llm_failed", error=str(exc))
+
+    if not script:
+        log.info("generate_script_used_scaffold")
+        script = scaffold_script
+
     retry_bump = 1 if state["validation_error"] else 0
     return state.update(
-        plan=plan.model_dump(),
         generated_script=script,
         stage="generated",
         fix_attempts=state["fix_attempts"] + retry_bump,
-        error=None,
+        mcp_calls=calls,
     )
 
 
 @action(
-    reads=["generated_script", "fix_attempts", "mcp_calls"], writes=["validation_error", "stage", "mcp_calls"]
+    reads=["generated_script", "scaffold_script", "fix_attempts", "mcp_calls"],
+    writes=["validation_error", "generated_script", "stage", "mcp_calls"],
 )
 async def validate_script(state: State) -> State:
     """Validate the script via the k6 MCP `validate_script` tool (1 VU, 1 iteration)."""
@@ -227,6 +252,15 @@ async def validate_script(state: State) -> State:
     if state["fix_attempts"] < MAX_FIX_ATTEMPTS:
         log.warning("validation_failed_retrying", attempts=state["fix_attempts"], error=err)
         return state.update(validation_error=err, stage="needs_fix", mcp_calls=calls)
+    # Gave up fixing the authored script; run the deterministic scaffold if it is untried.
+    if state["generated_script"] != state["scaffold_script"]:
+        log.warning("validation_gave_up_using_scaffold", error=err)
+        return state.update(
+            validation_error=err,
+            generated_script=state["scaffold_script"],
+            stage="validated",
+            mcp_calls=calls,
+        )
     return state.update(validation_error=err, stage="failed_validation", mcp_calls=calls)
 
 
@@ -345,7 +379,9 @@ async def correlate(state: State, splunk_spl: str = "") -> State:
     writes=["report", "stage"],
 )
 async def report(state: State) -> State:
-    """Assemble the final report. Terminal action."""
+    """Assemble the final report and have the model narrate the run as a tarot reading. Terminal action."""
+    verdict = _verdict(state)
+    narration = await _narrate(state, verdict)
     summary = {
         "mode": state["mode"],
         "endpoints_tested": state["endpoints"],
@@ -360,7 +396,8 @@ async def report(state: State) -> State:
             "k6_doc_refs": state["doc_refs"],
             "splunk_preflight": state["splunk_preflight"],
         },
-        "verdict": _verdict(state),
+        "narration": narration,
+        "verdict": verdict,
     }
     return state.update(report=summary, stage="done")
 
@@ -374,6 +411,71 @@ def _verdict(state: State) -> str:
     return "passed" if rr.get("success") else f"ran with failures (exit {rr.get('exit_code')})"
 
 
+_NARRATION_SYSTEM = (
+    "You are narrating a load-test run, themed as a tarot reading. For each phase line you are "
+    "given, write exactly one short, concrete sentence prefixed with its card name (for example "
+    "'The Fool: ...'). Use the numbers from the facts. Keep each line under 18 words. No preamble, "
+    "no markdown, one line per phase."
+)
+
+
+def _phase_facts(state: State, verdict: str) -> str:
+    lines = [f"- The Fool (select_mode): {state['mode']} mode, {len(state['endpoints'])} endpoint(s)"]
+    if refs := state["doc_refs"]:
+        names = ", ".join(r.get("slug", "").split("/")[-1] for r in refs)
+        lines.append(f"- The Hierophant (doc_lookup): consulted k6 docs ({names})")
+    if plan := state["plan"]:
+        lines.append(f"- The Chariot (scaffold): deterministic {plan.get('test_taxonomy', 'load')} scaffold")
+    if state["validation_error"]:
+        lines.append("- The Magician/Justice: authored script failed validation, ran the scaffold instead")
+    else:
+        lines.append("- The Magician/Justice: authored the script on the scaffold; it passed validation")
+    if rr := state["run_result"]:
+        lines.append(
+            f"- The Tower (run_test): {rr.get('http_reqs')} requests, p95 {rr.get('http_req_duration_p95_ms')} ms, "
+            f"failed rate {rr.get('http_req_failed_rate')}"
+        )
+    if state["splunk_enabled"]:
+        pf = state["splunk_preflight"] or {}
+        lines.append(
+            f"- The Hermit (splunk_preflight): index {pf.get('index')}, exists={pf.get('exists')}, "
+            f"events={pf.get('event_count')}"
+        )
+        rows = (state["correlation"] or {}).get("rows") or []
+        if rows:
+            lines.append(f"- The Lovers (correlate): server-side rollup {rows[0]}")
+    lines.append(f"- Judgement (report): verdict = {verdict}")
+    return "\n".join(lines)
+
+
+def _omen_fallback(state: State, verdict: str) -> str:
+    ran = ["select_mode", "doc_lookup", "scaffold", "generate_script", "validate_script"]
+    if state["run_result"]:
+        ran.append("run_test")
+    if state["splunk_enabled"]:
+        ran += ["splunk_preflight", "correlate"]
+    ran.append("report")
+    lines = []
+    for phase in ran:
+        card = arcana.ARCANA.get(phase)
+        if card:
+            _, name, omen = card
+            lines.append(f"{name}: {omen}")
+    lines.append(arcana.reading(verdict))
+    return "\n".join(lines)
+
+
+async def _narrate(state: State, verdict: str) -> str:
+    facts = _phase_facts(state, verdict)
+    try:
+        text = await asyncio.to_thread(make_llm().generate, system=_NARRATION_SYSTEM, user=facts)
+        if text and text.strip():
+            return text.strip()
+    except LLMError as exc:
+        log.warning("narration_llm_failed", error=str(exc))
+    return _omen_fallback(state, verdict)
+
+
 def build_application():
     return (
         ApplicationBuilder()
@@ -383,6 +485,7 @@ def build_application():
             extract_endpoints=extract_endpoints,
             parse_intent=parse_intent,
             doc_lookup=doc_lookup,
+            scaffold=scaffold,
             generate_script=generate_script,
             validate_script=validate_script,
             run_test=run_test,
@@ -398,8 +501,9 @@ def build_application():
             ("extract_endpoints", "doc_lookup", Condition.expr("stage == 'scoped'")),
             ("parse_intent", "report", Condition.expr("stage == 'failed'")),
             ("parse_intent", "doc_lookup", Condition.expr("stage == 'scoped'")),
-            ("doc_lookup", "generate_script", Condition.expr("stage == 'documented'")),
-            ("generate_script", "report", Condition.expr("stage == 'failed'")),
+            ("doc_lookup", "scaffold", Condition.expr("stage == 'documented'")),
+            ("scaffold", "report", Condition.expr("stage == 'failed'")),
+            ("scaffold", "generate_script", Condition.expr("stage == 'scaffolded'")),
             ("generate_script", "validate_script", Condition.expr("stage == 'generated'")),
             ("validate_script", "generate_script", Condition.expr("stage == 'needs_fix'")),
             ("validate_script", "run_test", Condition.expr("stage == 'validated'")),
@@ -424,6 +528,7 @@ def build_application():
             openapi_spec=None,
             doc_refs=[],
             plan=None,
+            scaffold_script=None,
             generated_script=None,
             validation_error=None,
             fix_attempts=0,

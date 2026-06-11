@@ -157,9 +157,9 @@ async def main() -> None:
     print("verdict:        ", report["verdict"])
     plan = report["plan"] or {}
     print(
-        "plan (from llm): ",
+        "scaffold plan:  ",
         f"taxonomy={plan.get('test_taxonomy')} parameterization={plan.get('parameterization')} "
-        f"endpoints={len(plan.get('endpoints') or [])}",
+        f"endpoints={len(plan.get('endpoints') or [])} (deterministic)",
     )
     print("splunk_enabled: ", report["splunk_enabled"])
     print("k6 http_reqs:   ", report["run_result"]["http_reqs"])
@@ -179,7 +179,9 @@ async def main() -> None:
             f"splunk={pf['server'].get('version')}",
         )
     print("mcp tool calls: ", [f"{c['server']}.{c['tool']}={c['status']}" for c in prov["tool_calls"]])
-    print("the reading:    ", arcana.reading(report["verdict"]))
+    print("the reading:")
+    for line in (report.get("narration") or arcana.reading(report["verdict"])).splitlines():
+        print("   ", line)
 
 
 if __name__ == "__main__":

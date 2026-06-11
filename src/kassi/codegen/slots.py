@@ -38,3 +38,10 @@ class Plan(BaseModel):
 
 
 DEFAULT_PLAN = Plan(test_taxonomy="load", parameterization="static_examples", endpoints=[])
+
+
+def default_plan(endpoints) -> Plan:
+    """The deterministic plan used to scaffold: a load test over the given endpoints."""
+    return DEFAULT_PLAN.model_copy(
+        update={"endpoints": [EndpointEmphasis(method=ep.method, path=ep.path) for ep in endpoints]}
+    )

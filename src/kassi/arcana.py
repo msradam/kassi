@@ -14,7 +14,16 @@ ARCANA: dict[str, tuple[str, str, str]] = {
     "extract_endpoints": ("IV", "The Emperor", "Order from change: the affected routes are named."),
     "parse_intent": ("III", "The Empress", "Intuition reads the intent and brings forth the endpoints."),
     "doc_lookup": ("V", "The Hierophant", "Doctrine consulted: the k6 docs ground the rite."),
-    "generate_script": ("I", "The Magician", "As above, so below: the load test is manifested."),
+    "scaffold": (
+        "VII",
+        "The Chariot",
+        "The vehicle is assembled from the spec: a runnable scaffold takes shape.",
+    ),
+    "generate_script": (
+        "I",
+        "The Magician",
+        "As above, so below: the agent authors the script atop the scaffold.",
+    ),
     "validate_script": ("XI", "Justice", "The script is weighed; the unworthy is turned back."),
     "run_test": ("XVI", "The Tower", "Load strikes the structure; what breaks is revealed."),
     "splunk_preflight": ("IX", "The Hermit", "A lantern into the index before the reading."),

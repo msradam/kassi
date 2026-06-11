@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import pytest
@@ -66,14 +65,30 @@ K6_AND_SPLUNK_RESPONSES = {
 }
 
 
+_K6_SCRIPT = (
+    "import http from 'k6/http';\n"
+    "export const options = { vus: 5, duration: '10s' };\n"
+    "export default function () {\n"
+    "  http.get('http://localhost:8000/api/pets');\n"
+    "}\n"
+)
+
+
 class _FakeLLM:
     def generate(self, *, system: str, user: str, stop=None, format=None) -> str:
-        return json.dumps({"test_taxonomy": "load", "parameterization": "static_examples", "endpoints": []})
+        if "narrat" in system.lower() or "tarot" in system.lower():
+            return "The Fool: the run begins.\nThe Tower: load applied.\nJudgement: passed."
+        return _K6_SCRIPT
+
+
+async def _no_guidance(description: str) -> None:
+    return None
 
 
 @pytest.fixture(autouse=True)
 def _offline_llm(monkeypatch):
     monkeypatch.setattr(kassi_app, "make_llm", lambda *a, **k: _FakeLLM())
+    monkeypatch.setattr(kassi_app, "fetch_k6_generation_guidance", _no_guidance)
 
 
 async def test_full_run_intent_mode():
@@ -93,13 +108,17 @@ async def test_full_run_intent_mode():
     assert report["run_result"]["http_reqs"] == 120
     assert report["run_result"]["http_req_duration_p95_ms"] == 14.2
 
-    # k6 work went through the upstream, and the generated script is self-contained.
+    # scaffold built a deterministic load plan; the model authored the script on top of it.
+    assert report["plan"]["test_taxonomy"] == "load"
     validated = fake.calls_to("k6", "validate_script")
     assert len(validated) == 1
     script = validated[0].args["script"]
     assert "import http from 'k6/http'" in script
     assert "import" in script and "openapi-to-k6" not in script
     assert fake.calls_to("k6", "run_script")
+
+    # the report narrates the run (model in tests, omens otherwise).
+    assert isinstance(report["narration"], str) and report["narration"].strip()
 
     # doc_lookup consulted the k6 MCP docs and recorded version-grounded citations.
     assert fake.calls_to("k6", "list_sections")
@@ -108,6 +127,7 @@ async def test_full_run_intent_mode():
     assert {r["slug"] for r in provenance["k6_doc_refs"]} & {"using-k6/thresholds", "using-k6/checks"}
     tools_called = {(c["server"], c["tool"]) for c in provenance["tool_calls"]}
     assert ("k6", "list_sections") in tools_called
+    assert ("k6", "generate_script(prompt)") in tools_called
     assert ("k6", "validate_script") in tools_called
     assert ("k6", "run_script") in tools_called
     # Splunk was not configured, so no preflight ran.

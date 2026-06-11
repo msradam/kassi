@@ -94,6 +94,35 @@ def summarize_correlation(data: Any) -> list[dict[str, Any]]:
     return []
 
 
+_SCRIPT_FENCE = re.compile(r"```(?:javascript|js|typescript|ts|k6)?\s*\n(.*?)```", re.DOTALL)
+
+
+def extract_script(raw: Any) -> str:
+    """Pull the k6 source out of a model response, stripping any markdown fence."""
+    if not isinstance(raw, str):
+        return ""
+    match = _SCRIPT_FENCE.search(raw)
+    return (match.group(1) if match else raw).strip()
+
+
+def build_generation_description(
+    endpoints: list[Endpoint], intent: str | None, scaffold: str, validation_error: str | None = None
+) -> str:
+    """Compose the request handed to k6's generate_script prompt and the model."""
+    eps = "\n".join(f"  - {ep.method} {ep.path}" for ep in endpoints)
+    parts = []
+    if intent:
+        parts.append(f"Intent: {intent}")
+    parts.append("Target endpoints:\n" + eps)
+    parts.append(
+        "Build on this deterministic scaffold. Keep it a single self-contained file with "
+        "plain k6/http calls and no local imports:\n\n" + scaffold
+    )
+    if validation_error:
+        parts.append(f"The previous attempt failed k6 validation:\n{validation_error}\nFix it.")
+    return "\n\n".join(parts)
+
+
 def _to_int(value: Any) -> int | None:
     try:
         return int(value)
