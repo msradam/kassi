@@ -74,18 +74,30 @@ server-side rows: [{"total_events": "80", "server_errors": "7", "client_errors":
 This proves the full path: kassi action -> theodosia `call_upstream` -> MCP (stdio) ->
 Splunk REST -> windowed rollup back into the report.
 
-## 4. The official Splunk MCP Server (production path)
+## 4. The official Splunk MCP Server (production path, verified)
 
-`dev_splunk_mcp.py` is a development convenience, not the shipped integration. For the
-submission, install the official **Splunk MCP Server** app (Splunkbase 7931) on the Splunk
-instance, add the `mcp_tool_execute` capability to your role, generate an encrypted token in
-the app, copy the endpoint, and point kassi at it:
+`dev_splunk_mcp.py` is a development convenience, not the shipped integration. The official
+**Splunk MCP Server** app (Splunkbase 7931, v1.2.0) installs onto the Splunk instance, adds
+the `mcp_tool_execute` capability, and generates an encrypted MCP token in its UI. It exposes
+a streamable-HTTP endpoint at the management port:
 
-```bash
-export KASSI_SPLUNK_MCP_ENDPOINT="https://<host>/.../mcp"
-export KASSI_SPLUNK_TOKEN="<encrypted-token>"
-kassi serve
+```
+https://localhost:8089/services/mcp
 ```
 
-kassi then calls the official `splunk_run_query` tool with the same windowed SPL. This step
-is interactive (Splunkbase download + UI token generation) and cannot be scripted.
+Put the endpoint and token in `.env` (git-ignored; see `.env.example`). `kassi serve` and the
+verify script load it automatically:
+
+```
+KASSI_SPLUNK_MCP_ENDPOINT=https://localhost:8089/services/mcp
+KASSI_SPLUNK_TOKEN=<encrypted-token>
+KASSI_SPLUNK_INSECURE=1   # local self-signed cert only
+```
+
+kassi connects via `npx mcp-remote <endpoint> --header "Authorization: Bearer <token>"` and
+calls the official `splunk_run_query` tool with the windowed SPL. Verified: the tools list is
+`splunk_run_query, splunk_get_indexes, splunk_get_info, ...` and `verify_correlate_live.py`
+returns the same server-side rollup through the official server as through the dev bridge.
+
+Only the Splunkbase download and the UI token generation are manual; everything else is
+scripted.

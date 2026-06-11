@@ -795,6 +795,7 @@ source = { editable = "." }
 dependencies = [
     { name = "httpx" },
     { name = "pydantic" },
+    { name = "python-dotenv" },
     { name = "structlog" },
     { name = "theodosia" },
 ]
@@ -810,6 +811,7 @@ dev = [
 requires-dist = [
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "pydantic", specifier = ">=2.13.4" },
+    { name = "python-dotenv", specifier = ">=1.2.2" },
     { name = "structlog", specifier = ">=26.1.0" },
     { name = "theodosia", specifier = ">=0.4.2" },
 ]

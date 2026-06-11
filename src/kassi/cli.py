@@ -7,6 +7,7 @@ rest come from theodosia. Sessions are stored under ``~/.kassi``.
 
 from __future__ import annotations
 
+from dotenv import load_dotenv
 from theodosia.cli import build_cli, run
 
 from kassi.app import build_application
@@ -14,6 +15,9 @@ from kassi.upstream import upstream
 
 
 def main() -> int:
+    # Load KASSI_* / OLLAMA_* settings from a project .env (e.g. the Splunk endpoint
+    # and token). Real environment variables already set take precedence.
+    load_dotenv()
     cli = build_cli(
         "kassi",
         application=build_application,

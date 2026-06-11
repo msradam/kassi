@@ -92,10 +92,15 @@ kassi verify <app-id>        # confirm the ledger has not been tampered with
 | `KASSI_K6_MCP_ARGS` | (empty) | extra args for the k6 MCP server |
 | `KASSI_K6_DOCKER` | unset | if set, run the k6 MCP server via Docker |
 | `KASSI_K6_IMAGE` | `grafana/mcp-k6:latest` | Docker image when `KASSI_K6_DOCKER` is set |
-| `KASSI_SPLUNK_MCP_ENDPOINT` | unset | streamable-HTTP endpoint of the Splunk MCP Server |
+| `KASSI_SPLUNK_MCP_ENDPOINT` | unset | streamable-HTTP endpoint of the Splunk MCP Server (e.g. `https://localhost:8089/services/mcp`) |
 | `KASSI_SPLUNK_TOKEN` | unset | encrypted MCP token (sent as `Authorization: Bearer`) |
 | `KASSI_SPLUNK_MCP_CMD` | `npx` | stdio bridge command (runs `mcp-remote`) |
+| `KASSI_SPLUNK_INSECURE` | unset | skip TLS verification in the bridge (local self-signed Splunk only) |
 | `THEODOSIA_HOME` | `~/.kassi` | ledger / session store |
+
+`kassi serve` loads these from a `.env` in the project root if present (see
+`.env.example`); real environment variables take precedence. Keep `.env` out of git
+(it is git-ignored) since the token is a credential.
 
 When running the k6 server in Docker, a target on the host is reachable as
 `http://host.docker.internal:<port>` from inside the container.
@@ -162,9 +167,12 @@ uv run python scripts/verify_correlate_live.py  # drive the whole FSM; correlate
 exercise the correlate path without the official app. Production uses the official Splunk
 MCP Server via `KASSI_SPLUNK_MCP_ENDPOINT` + `KASSI_SPLUNK_TOKEN`.
 
-Verified end-to-end against Splunk Enterprise 10.4.0: a run reporting 200 client-side k6
+Verified end-to-end against Splunk Enterprise 10.4.0 with the **official Splunk MCP
+Server** (Splunkbase 7931, v1.2.0): the full FSM runs, `correlate` calls the official
+`splunk_run_query` tool over `mcp-remote`, and a run reporting 200 client-side k6
 requests (p95 21.4 ms, 6% failures) correlated to 80 server-side events over the test
-window with 7 server errors and 3 client errors.
+window with 7 server errors and 3 client errors. `verify_correlate_live.py` uses the
+official server automatically when `.env` is set, else the dev bridge.
 
 ## License
 

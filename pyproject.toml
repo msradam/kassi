@@ -9,6 +9,7 @@ requires-python = ">=3.12"
 dependencies = [
     "httpx>=0.28.1",
     "pydantic>=2.13.4",
+    "python-dotenv>=1.2.2",
     "structlog>=26.1.0",
     "theodosia>=0.4.2",
 ]

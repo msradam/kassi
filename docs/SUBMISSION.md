@@ -5,9 +5,10 @@ Bonus prizes targeted: Best Use of Splunk MCP Server.
 
 This is a draft of the Devpost text description. Edit before submitting.
 
-Verified end-to-end against Splunk Enterprise 10.4.0 (see `docs/SPLUNK_SETUP.md`): the
-full state machine runs, and the `correlate` step queries live Splunk through an MCP
-server and returns a server-side rollup scoped to the test window.
+Verified end-to-end against Splunk Enterprise 10.4.0 with the official Splunk MCP Server
+(Splunkbase 7931, v1.2.0); see `docs/SPLUNK_SETUP.md`. The full state machine runs, and the
+`correlate` step calls the official `splunk_run_query` tool and returns a server-side rollup
+scoped to the test window.
 
 ## The problem
 

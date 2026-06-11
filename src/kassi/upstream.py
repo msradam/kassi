@@ -73,10 +73,15 @@ def splunk_upstream_config() -> dict[str, Any] | None:
     if not (endpoint and token):
         return None
     command = os.environ.get("KASSI_SPLUNK_MCP_CMD", "npx")
-    return {
+    config: dict[str, Any] = {
         "command": command,
         "args": ["-y", "mcp-remote", endpoint, "--header", f"Authorization: Bearer {token}"],
     }
+    if os.environ.get("KASSI_SPLUNK_INSECURE"):
+        # Local Splunk's management port uses a self-signed cert; tell mcp-remote's
+        # Node runtime to skip TLS verification. Do not set this against a real CA.
+        config["env"] = {**os.environ, "NODE_TLS_REJECT_UNAUTHORIZED": "0"}
+    return config
 
 
 def upstream() -> dict[str, Any]:

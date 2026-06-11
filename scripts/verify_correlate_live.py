@@ -21,11 +21,13 @@ import time
 import urllib.request
 from pathlib import Path
 
+from dotenv import load_dotenv
 from theodosia import UpstreamManager, bind_upstream
 from theodosia.upstream import reset_upstream
 
 import kassi.app as kassi_app
 from kassi.app import build_application
+from kassi.upstream import splunk_configured, splunk_upstream_config
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -107,23 +109,27 @@ class _FakeLLM:
 
 
 async def main() -> None:
-    os.environ.setdefault("KASSI_SPLUNK_MCP_ENDPOINT", "dev")
-    os.environ.setdefault("KASSI_SPLUNK_TOKEN", "dev")
+    load_dotenv(ROOT / ".env")
 
     def _fake_llm(*_a, **_k):
         return _FakeLLM()
 
     kassi_app.OllamaLLM = _fake_llm  # type: ignore[assignment]
 
-    splunk = UpstreamManager(
-        {
-            "splunk": {
-                "command": sys.executable,
-                "args": [str(ROOT / "scripts" / "dev_splunk_mcp.py")],
-                "cwd": str(ROOT),
-            }
+    if splunk_configured():
+        print("splunk upstream: OFFICIAL Splunk MCP Server (from .env)")
+        splunk_config = splunk_upstream_config()
+    else:
+        print("splunk upstream: local dev bridge (scripts/dev_splunk_mcp.py)")
+        os.environ.setdefault("KASSI_SPLUNK_MCP_ENDPOINT", "dev")
+        os.environ.setdefault("KASSI_SPLUNK_TOKEN", "dev")
+        splunk_config = {
+            "command": sys.executable,
+            "args": [str(ROOT / "scripts" / "dev_splunk_mcp.py")],
+            "cwd": str(ROOT),
         }
-    )
+
+    splunk = UpstreamManager({"splunk": splunk_config})
     token = bind_upstream(_RoutingManager(splunk, _hec_token()))
     try:
         app = build_application()
