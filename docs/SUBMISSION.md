@@ -1,74 +1,121 @@
-# kassi — Splunk Agentic Ops Hackathon submission (draft)
+# Kassi: Splunk Agentic Ops Hackathon submission
 
-Track: Observability (primary). Also relevant to Platform & Developer Experience.
-Bonus prizes targeted: Best Use of Splunk MCP Server.
-
-This is a draft of the Devpost text description. Edit before submitting.
+Track: Observability (primary); also Platform & Developer Experience.
+Bonus prize targeted: Best Use of Splunk MCP Server.
 
 Verified end-to-end against Splunk Enterprise 10.4.0 with the official Splunk MCP Server
-(Splunkbase 7931, v1.2.0); see `docs/SPLUNK_SETUP.md`. The full state machine runs, and the
-`correlate` step calls the official `splunk_run_query` tool and returns a server-side rollup
-scoped to the test window.
+(Splunkbase 7931, v1.2.0). See the case study in the README and `docs/SPLUNK_SETUP.md`.
 
-## The problem
+## Inspiration
 
 Load testing tells you *that* a change made an endpoint slower. It does not tell you
-*why*. The client-side numbers (p95, error rate, throughput) live in one tool; the
-server-side truth (5xx spikes, slow queries, saturation) lives in Splunk. Connecting
-the two is manual, after the fact, and rarely happens inside CI.
+*why*. The client-side numbers (p95, error rate, throughput) live in one tool. The
+server-side truth (5xx spikes, slow queries, saturation) lives in Splunk. Connecting the
+two is manual, done after the fact, and almost never happens inside CI. We wanted an
+agent that runs the load test and explains the result from server-side telemetry in one
+pass, and we wanted that agent to be safe to run autonomously: bounded, auditable, and
+unable to wander off its rails.
 
-## What kassi does
+The name is the theme: Kassandra saw what others would not believe, so kassi divines your
+stack's performance. Each workflow phase is a card of the Major Arcana the agent turns,
+from The Fool (the run begins) to Judgement (the verdict, sealed to the ledger).
 
-kassi is an AI agent that closes that loop. Give it a code change or a plain-language
-intent and it:
+## What it does
 
-1. picks the affected HTTP endpoints (from a git diff, or by scoring an OpenAPI spec
-   against the intent),
-2. generates a self-contained k6 load test,
-3. validates and runs it through the **Grafana k6 MCP server**,
-4. queries **Splunk** through the **Splunk MCP Server** for the target service's
-   server-side telemetry over the exact test window, and
-5. reports a combined client + server verdict.
+Kassi is an AI agent that closes the load-test-to-observability loop. Give it a code
+change (a git diff) or a plain-language intent and it:
 
-## How Splunk is used
+1. picks the affected HTTP endpoints, from the diff or by scoring an OpenAPI spec against
+   the intent,
+2. consults the k6 MCP documentation tools to ground the test in the live k6 API,
+3. generates a self-contained k6 load test, validates and runs it through the Grafana k6
+   MCP server,
+4. preflights the Splunk index (existence, event count, sourcetypes, version), then
+   queries Splunk through the official Splunk MCP Server for the target's server-side
+   telemetry over the exact test window, and
+5. reports a combined client plus server verdict with a provenance record of every
+   upstream tool call.
 
-The Splunk MCP Server is wired in as an upstream MCP server. After a run, kassi builds
-an SPL rollup scoped to the test window and calls the `splunk_run_query` tool to read
-back server-side errors and latency. The agent driving kassi never talks to Splunk
-directly; it only takes workflow steps, and the Splunk call happens inside a workflow
-action. This is the "Best Use of Splunk MCP Server" angle: a single agent orchestrating
-the Splunk MCP Server alongside another MCP server, with every query recorded.
+The driving agent (Claude Code, Cursor, any MCP client) never sees k6 or Splunk. It sees
+one tool, `step(action, inputs)`, and takes the workflow one move at a time.
 
-## How it is built
+In a verified run against live Splunk, one agent orchestrated 11 tool calls across both
+MCP servers: it grounded generation in the live k6 docs, confirmed the `web` index on the
+official Splunk MCP Server (720 events, `access_json` sourcetype, Splunk 10.4.0), reported
+200 client-side k6 requests (p95 21.4 ms, 6% failed), then correlated them to 80
+server-side events over the test window with 7 5xx and 3 4xx at 21.25 ms average. The
+client failure rate is explained by server-side errors, correlated automatically, with
+every tool call on an audit ledger.
 
-- **theodosia + Burr**: the workflow is a state machine served over MCP. The agent
-  drives it one `step` at a time; illegal steps are refused with the legal next actions,
-  and every step and refusal is written to an immutable, hash-chained ledger. `kassi
-  verify` proves the audit trail was not tampered with. This makes autonomous operation
-  governable by construction, which matters for ops tooling.
-- **Two MCP upstreams**: the Grafana k6 MCP server and the Splunk MCP Server, both
-  hidden from the driving agent.
-- **Narrow AI**: a local model fills a typed, closed-enum plan; pure Python composes the
-  k6 script and the SPL. The model never writes executable code or queries, so generation
-  stays deterministic and auditable.
+## How we built it
 
-## What is novel
+- **Theodosia + Burr.** The workflow is a Burr state machine served over MCP by
+  [Theodosia](https://msradam.github.io/theodosia/). The graph's edges are the only legal
+  moves. An illegal step is refused with the list of valid next actions, and every step
+  and every refusal is written to an immutable, hash-chained ledger. `kassi verify` proves
+  the audit trail was not tampered with. Autonomy is governable by construction, which is
+  what makes the agent safe to run unattended on ops infrastructure.
+- **Two MCP upstreams from one agent, nine tools.** Theodosia spawns the Grafana k6 MCP
+  server and the official Splunk MCP Server as hidden stdio upstreams. Action bodies reach
+  them with `call_upstream(server, tool, args)`. Beyond running the test, the agent uses
+  the k6 documentation tools (`list_sections`, `get_documentation`) to ground generation,
+  and the Splunk metadata tools (`splunk_get_info`, `splunk_get_index_info`,
+  `splunk_get_metadata`) to preflight the index. Every call is recorded to an
+  `mcp_provenance` block so the run shows exactly which upstream tools were invoked. With
+  k6 2.0 the k6 server is the built-in `k6 x mcp` subcommand, so one binary covers load
+  generation with no separate install.
+- **How Splunk is used.** After the run, `run_test` records the wall-clock window.
+  `splunk_preflight` verifies the target index and captures its event count, sourcetypes,
+  and the Splunk version. `correlate` then builds an SPL error/latency rollup scoped to
+  that window and calls the official `splunk_run_query` tool over the documented
+  `mcp-remote` bridge, authenticated with an encrypted Bearer token. Both Splunk phases
+  degrade gracefully to k6-only when not configured.
+- **Narrow AI.** A model fills a typed, closed-enum plan: test taxonomy, parameterization,
+  per-endpoint emphasis. The backend is pluggable, a local Ollama model or Claude Haiku
+  via the Messages API, selected with one env var. It never authors k6 source or SPL. Pure
+  Python composes the script and the query, so generation stays deterministic and the blast
+  radius of a bad model output is small. The pipeline works with the model offline.
 
-- An agent that orchestrates two MCP servers (load generation and observability) inside
-  one audited state machine.
+## Challenges we ran into
+
+- The k6 MCP runs a single script string and cannot resolve local imports, so the codegen
+  had to emit one self-contained file built from the OpenAPI schema, with no imported
+  client and no aux files.
+- Keeping the LLM on a short leash (an enum plan only) while still producing useful,
+  endpoint-aware tests.
+- Correlation only works if the SPL window matches the test exactly. A near-instant run
+  produces a zero-width window and zero rows, so the run has to record a real wall-clock
+  span and the SPL has to be scoped to it.
+- Wiring the official Splunk MCP Server over its streamable-HTTP transport, with an
+  encrypted token and a local self-signed certificate, through the `mcp-remote` bridge.
+
+## Accomplishments that we're proud of
+
+- One agent orchestrating two MCP servers, load generation and observability, inside a
+  single audited state machine.
 - Client-side and server-side performance data correlated automatically over a precise
   test window, driven from a code change.
 - A durable, verifiable ledger of everything the agent did and everything it was refused.
+- A reproducible end-to-end run against the official Splunk MCP Server, not a mock.
 
-## Challenges
+## What we learned
 
-- The k6 MCP runs a single script string, so the codegen had to emit one self-contained
-  file (no imported client, no aux files) built from the OpenAPI schema.
-- Keeping the LLM on a short leash (enum plan only) while still producing useful,
-  endpoint-aware tests.
+- Constraining the agent makes it more useful, not less. A single `step` tool with
+  refusals turned out to be easier to drive and far easier to trust than a broad toolset.
+- The valuable signal is in the join. Neither the k6 numbers nor the Splunk rollup is new,
+  but pairing them over the exact window is what turns "it got slower" into "5xx errors
+  caused it."
+- Determinism belongs in code, judgment belongs in the model. Letting the LLM pick from a
+  closed plan and letting Python write the script and SPL kept the whole pipeline auditable.
+- k6 2.0 folding the MCP server into the `k6 x mcp` subcommand removed an entire install
+  step and made the demo easier to reproduce.
 
-## What is next
+## What's next for Kassi: Synthetic Load Generation
 
-- Ship k6 results into Splunk via HEC for dashboards.
-- Use a Splunk-hosted model for the correlation/root-cause narrative.
+- Ship k6 results into Splunk via HEC so client-side and server-side metrics live together
+  in dashboards.
+- Use a Splunk-hosted model for a root-cause narrative over the correlated window.
 - Use the AI Assistant for SPL to generate correlation queries from intent.
+- Grow synthetic load generation: schema-aware request synthesis, realistic traffic mixes
+  and ramps, and seeded fault scenarios so a single intent produces a richer, more
+  representative test rather than a static replay.

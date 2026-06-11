@@ -71,7 +71,7 @@ correlation OK:  True
 server-side rows: [{"total_events": "80", "server_errors": "7", "client_errors": "3", "avg_response_ms": "21.25"}]
 ```
 
-This proves the full path: kassi action -> theodosia `call_upstream` -> MCP (stdio) ->
+This proves the full path: kassi action -> Theodosia `call_upstream` -> MCP (stdio) ->
 Splunk REST -> windowed rollup back into the report.
 
 ## 4. The official Splunk MCP Server (production path, verified)

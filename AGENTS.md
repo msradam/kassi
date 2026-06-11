@@ -1,0 +1,229 @@
+# AGENTS.md
+
+Guidance for coding agents working in this repo. Read this before editing.
+
+## What kassi is
+
+kassi is a diff/intent-driven load-testing agent that closes the loop with
+observability. Given a code change or a plain-language intent it picks the affected
+HTTP endpoints, generates a k6 load test, runs it, then correlates the client-side
+results with the target service's server-side telemetry in Splunk, and reports a
+combined verdict.
+
+The whole workflow is a [Burr](https://github.com/apache/burr) state machine served
+over MCP by [Theodosia](https://msradam.github.io/theodosia/). An external agent
+(Claude Code, Cursor, a custom loop) drives it one `step(action, inputs)` at a time.
+The graph's edges are the only legal moves: an illegal step is refused with the list
+of valid next actions, and every step and refusal is written to an immutable,
+hash-chained ledger. One agent orchestrates two upstream MCP servers, neither visible
+to the driver:
+
+- **k6** (`grafana/mcp-k6`): validate and run the generated load test.
+- **splunk** (official Splunk MCP Server, Splunkbase 7931): run SPL to read the
+  target's server-side telemetry over the exact test window.
+
+Built for the Splunk Agentic Ops Hackathon (Observability track; also Platform & Dev
+Experience). Targets the Best Use of Splunk MCP Server bonus prize.
+
+## Repo map
+
+```
+src/kassi/
+  __init__.py        exports build_application
+  app.py             THE FSM: async @action functions + build_application() + mount();
+                     includes doc_lookup + splunk_preflight MCP-native phases
+  cli.py             `kassi` console command (Theodosia build_cli); loads .env; warm-k6
+  upstream.py        k6 + splunk upstream MCP configs; splunk_configured()
+  state.py           Pydantic models (Endpoint, RunResult); MAX_FIX_ATTEMPTS
+  parse.py           pure helpers: diff->endpoints, intent scoring, SPL builder,
+                     k6 doc + Splunk index/metadata/payload parsers
+  llm.py             OllamaLLM + AnthropicLLM clients, LLM Protocol, make_llm() factory
+  arcana.py          theming only: phase -> Major Arcana card; kept out of state/report
+  githost.py         git diff via subprocess (the only non-MCP shell-out kassi keeps)
+  codegen/
+    __init__.py      exports compose, fill_plan, Plan, slots
+    slots.py         the closed-enum Plan (TestTaxonomy, Parameterization, flags)
+    plan.py          fill_plan(): one LLM call -> validated Plan, falls back to default
+    compose.py       pure-Python composer -> a single self-contained k6 script
+tests/test_fsm.py    offline FSM tests (FakeUpstream + fake LLM)
+examples/petstore/   sample openapi.json for intent mode + tests
+scripts/             local Splunk helpers (see docs/SPLUNK_SETUP.md)
+  seed_splunk.py        create index + HEC, ingest sample telemetry, verify the SPL
+  dev_splunk_mcp.py     LOCAL DEV ONLY stdio MCP bridge to Splunk REST
+  verify_correlate_live.py  drive the whole FSM; correlate hits live Splunk
+docs/SUBMISSION.md   Devpost writeup draft
+docs/SPLUNK_SETUP.md reproducible local Splunk install + verified results
+architecture_diagram.md  required hackathon diagram (mermaid + prose)
+.env / .env.example  Splunk endpoint + token (.env is git-ignored; never commit it)
+```
+
+## Architecture and the FSM
+
+The state machine lives entirely in `app.py`. Flow:
+
+```
+select_mode ─diff──→ read_diff → extract_endpoints ┐
+            └intent─→ parse_intent ────────────────┴→ doc_lookup → generate_script
+generate_script → validate_script ⇄ (retry) generate_script
+validate_script → run_test ─splunk?─→ splunk_preflight → correlate → report
+                          └─else──────────────────────────────────→ report   (also on validation give-up)
+```
+
+`doc_lookup` (k6 docs) and `splunk_preflight` (Splunk index/metadata/info) are MCP-native
+phases: both use `safe_upstream` (never block the run) and append to the `mcp_calls`
+provenance list that `report` surfaces as `mcp_provenance`.
+
+Control flow is driven by a single `stage` string in state, plus a few flags
+(`mode`, `splunk_enabled`, `fix_attempts`). Transitions are gated with
+`Condition.expr("stage == '...'")`. The first matching edge from the current action
+wins, so keep stage values mutually exclusive.
+
+`select_mode` is the entrypoint and the only action that takes inputs from the driver
+(`repo_path`, `ref`, `target_base_url`, `intent`, `splunk_index`). Inputs are normal
+function parameters with defaults; Theodosia passes the `step` tool's `inputs` to
+them. `correlate` also takes an optional `splunk_spl` input to override the SPL.
+
+### Invariants when adding or changing an action
+
+Theodosia's `kassi doctor --runtime` enforces most of these; run it after edits.
+
+1. **Action bodies must be `async def`.** Theodosia awaits them and persists after
+   each step. A sync body fails doctor.
+2. **Wrap blocking work in `asyncio.to_thread`.** git and the Ollama HTTP call are
+   sync; do not block the event loop (see `read_diff`, `generate_script`).
+3. **State values must be JSON-serializable.** They are written to the ledger.
+   Dump Pydantic models with `.model_dump()`; rebuild with `Model(**d)`. Do not put
+   Pydantic objects, Paths, or datetimes directly in state. `time.time()` floats are
+   fine (`run_started_at` / `run_ended_at`).
+4. **Declare every field you read/write** in the `@action(reads=[...], writes=[...])`
+   decorator. doctor checks that every `reads` key is covered by some `writes` or the
+   initial state, and that every initial-state key is used.
+5. **Add three things together** for a new action: register it in
+   `.with_actions(...)`, add its `.with_transitions(...)` edges (gated on `stage`),
+   and add any new state fields to `.with_state(...)` with a default.
+6. **Errors route to `report`, not a dead end.** On failure set `stage="failed"` (or
+   `"failed_validation"`) and ensure a transition to `report` exists. Never run a
+   broken script; the validate retry loop is bounded by `MAX_FIX_ATTEMPTS`.
+
+## Codegen invariants (do not break these)
+
+- **The generated k6 script must be a single self-contained file.** The k6 MCP
+  `run_script`/`validate_script` tools take one `script` string and cannot resolve
+  local imports. `compose.py` emits plain `k6/http` calls with inlined `options` and
+  `handleSummary`. Do not reintroduce an imported client or aux files (this is why
+  the original `@grafana/openapi-to-k6` substrate was dropped).
+- **The LLM only fills the closed-enum `Plan`** (test taxonomy, parameterization,
+  per-endpoint emphasis flags). It never authors k6 source or SPL. Pure Python in
+  `compose.py` (script) and `parse.build_correlation_spl` (SPL) does the writing.
+  Keep generation deterministic; if you need a new knob, add an enum to `slots.py`,
+  not a free-text LLM field.
+- `fill_plan` must stay non-load-bearing: on any LLM/parse failure it falls back to a
+  default plan built from the endpoints. The pipeline must work with the LLM backend
+  (Ollama or Anthropic) unreachable.
+- Sample request data is derived best-effort from the OpenAPI schema. It only has to
+  exercise the endpoint shape, not be semantically perfect.
+
+## Upstream MCP servers and config
+
+`upstream.py` builds the `upstream=` dict passed to `mount`/`build_cli`. Theodosia
+maps a `{"command","args"}` dict to a stdio transport and reaches tools with
+`call_upstream(server, tool, args)` / `safe_upstream(...)` (the latter never raises
+and classifies the result). The driving agent never sees these servers.
+
+- **k6** is always configured. Default is the built-in `k6 x mcp` subcommand
+  (k6 2.0+, provisioned on first run; `kassi warm-k6` warms the cache).
+  `KASSI_K6_CMD=mcp-k6` selects the standalone binary; `KASSI_K6_DOCKER=1` runs
+  via Docker. All three speak stdio and expose the same tools, so codegen and parsers
+  are unaffected. kassi calls four k6 tools: `list_sections` + `get_documentation`
+  (doc_lookup), `validate_script`, `run_script`.
+- **splunk** is configured only when `KASSI_SPLUNK_MCP_ENDPOINT` and
+  `KASSI_SPLUNK_TOKEN` are set. `select_mode` records `splunk_enabled =
+  splunk_configured()`; the graph branches on it, and both `splunk_preflight` and
+  `correlate` degrade gracefully (via `safe_upstream`) when absent. kassi calls four
+  Splunk tools: `splunk_get_info` + `splunk_get_index_info` + `splunk_get_metadata`
+  (splunk_preflight) and `splunk_run_query` (correlate). The official server is reached
+  through `npx mcp-remote <endpoint> --header "Authorization: Bearer <token>"`; this is
+  the documented official client transport. `KASSI_SPLUNK_INSECURE=1` adds
+  `NODE_TLS_REJECT_UNAUTHORIZED=0` for a local self-signed Splunk cert only.
+
+Env vars (full table in README). `kassi serve` loads them from `.env` in the project
+root via python-dotenv; real environment variables take precedence.
+
+**Secrets:** `.env` holds the Splunk MCP token and is git-ignored. Never commit it,
+never echo the token in output or commit messages, never paste it into code. Use
+`.env.example` for documentation. If you must read the token to wire something, do it
+programmatically without printing the value.
+
+## Dev workflow
+
+```bash
+uv sync                         # install (Python >=3.12)
+uv run kassi render             # print the FSM
+uv run kassi render --mermaid   # mermaid source (kept in sync in README)
+uv run kassi doctor --runtime   # validate graph + runtime tool shape (run after FSM edits)
+uv run kassi serve              # mount as an MCP server over stdio
+uv run pytest -q                # offline tests
+```
+
+Quality passes after any code change, loop until clean:
+
+```bash
+uv run ruff format .
+uv run ruff check --fix .
+uv run pytest -q
+```
+
+ruff config is in `pyproject.toml` (line length 110; rule groups I, UP, FURB, B,
+SIM). There is no mypy gate; keep type hints accurate anyway.
+
+### Tests
+
+`tests/test_fsm.py` runs fully offline:
+- Theodosia's `theodosia.testing.FakeUpstream` fakes both k6 and Splunk MCP servers
+  (responses keyed by `{server: {tool: payload}}`).
+- a `_FakeLLM` returns a canned Plan JSON, and an autouse fixture monkeypatches
+  `kassi.app.make_llm`.
+- the happy-path test drives the Burr app directly with `await app.arun(...)`;
+  the enforcement test mounts the server and calls the `step` tool through a
+  `fastmcp.Client` to assert an `invalid_transition` refusal.
+
+When you add an action or change a payload shape, update `FakeUpstream` responses and
+the parsers in `parse.py` together. Async tests rely on `asyncio_mode = auto`.
+
+### Local Splunk
+
+See `docs/SPLUNK_SETUP.md`. Splunk Enterprise runs non-root from `~/splunk`
+(`~/splunk/bin/splunk start|status|stop`); admin / `kassi-admin-2026`; web :8000,
+management REST :8089. The official Splunk MCP Server app exposes
+`https://localhost:8089/services/mcp`. `scripts/seed_splunk.py` seeds sample
+telemetry; `scripts/verify_correlate_live.py` drives the whole FSM against live Splunk
+(official server when `.env` is set, else the dev bridge). The dev bridge is a test
+convenience, not the shipped integration.
+
+## Conventions
+
+- **Comments:** default to none. Only comment to dispel confusion (unidiomatic code,
+  a workaround, a spec link). No narrative or session-referencing comments. Match the
+  surrounding density.
+- **Prose (README/docs/commits):** plain declarative. No marketing voice, no em
+  dashes, one idea per sentence.
+- **Commits:** do not add `Co-Authored-By` or any AI attribution trailer, and no
+  "Generated with" footers. Branch off `main` and only commit/push when asked.
+- **License:** Apache-2.0 (matches Theodosia and Burr).
+- **Library APIs:** Theodosia, Burr, FastMCP, and the MCP servers move fast. Verify
+  against the installed package in `.venv` before writing non-trivial code against
+  them rather than relying on memory.
+
+## Gotchas
+
+- The k6 MCP enforces caps (max 50 VUs, max 5 min). The load taxonomy in `compose.py`
+  stays within them; keep new scenarios under those limits.
+- `__ENV.TARGET_BASE_URL` is not forwarded into the k6 MCP subprocess; the composer
+  bakes the base URL in as the literal default, so the target must be reachable from
+  wherever the k6 server runs (Docker needs `host.docker.internal`).
+- `run_test` records the wall-clock window; `correlate`'s SPL is scoped to it. A
+  near-instant run produces a zero-width window and zero rows. Real k6 runs span
+  seconds; the verify script simulates a window by sleeping and ingesting during it.
+- `safe_upstream` classifies a dict containing a truthy `error` key as ERROR. For k6
+  validate we use `call_upstream` directly so a well-formed "script invalid" payload
+  is parsed by `parse.parse_validation`, not swallowed as an upstream error.

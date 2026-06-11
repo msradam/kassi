@@ -12,14 +12,16 @@ flowchart TB
         A["Claude Code / any MCP client<br/>sees ONE tool: step(action, inputs)"]
     end
 
-    subgraph Kassi["kassi — Burr FSM served over MCP by theodosia"]
+    subgraph Kassi["kassi: Burr FSM served over MCP by Theodosia"]
         direction TB
         SM["select_mode"] --> RD["read_diff / parse_intent"]
-        RD --> GS["generate_script"]
+        RD --> DL["doc_lookup"]
+        DL --> GS["generate_script"]
         GS --> VS["validate_script"]
         VS -->|retry| GS
         VS --> RT["run_test"]
-        RT --> CO["correlate"]
+        RT --> PF["splunk_preflight"]
+        PF --> CO["correlate"]
         CO --> RP["report"]
         LEDGER[("immutable<br/>hash-chained ledger<br/>steps + refusals")]
     end
@@ -29,8 +31,8 @@ flowchart TB
     end
 
     subgraph Upstreams["Upstream MCP servers (hidden from the driver)"]
-        K6["Grafana k6 MCP server<br/>validate_script · run_script"]
-        SPL["Splunk MCP Server<br/>splunk_run_query (SPL)"]
+        K6["Grafana k6 MCP server<br/>list_sections · get_documentation<br/>validate_script · run_script"]
+        SPL["Splunk MCP Server<br/>get_info · get_index_info · get_metadata<br/>splunk_run_query (SPL)"]
     end
 
     subgraph Splunk["Splunk Enterprise"]
@@ -41,11 +43,13 @@ flowchart TB
 
     A -->|MCP: step| SM
     Kassi -.records.-> LEDGER
+    DL -->|MCP call_upstream| K6
     GS -->|HTTP| OLLAMA
     VS -->|MCP call_upstream| K6
     RT -->|MCP call_upstream| K6
     K6 -->|generated k6 load| TARGET
     TARGET -->|logs/metrics| IDX
+    PF -->|MCP call_upstream| SPL
     CO -->|MCP call_upstream| SPL
     SPL -->|SPL over test window| IDX
     RP -->|final verdict| A
@@ -54,13 +58,17 @@ flowchart TB
 ## How the application interacts with Splunk
 
 After the k6 run, the `run_test` step records the wall-clock test window
-(`run_started_at`, `run_ended_at`). The `correlate` step builds an SPL query scoped to
-that window (default: an error/latency rollup over the configured index; overridable
-per run) and calls the official **Splunk MCP Server** `splunk_run_query` tool through
-theodosia's `call_upstream`. The Splunk MCP Server runs the SPL against Splunk
-Enterprise and returns the server-side rollup, which kassi pairs with the client-side
-k6 metrics in the final report. Connection is the official `mcp-remote` stdio bridge to
-the server's streamable-HTTP endpoint, authenticated with an encrypted Bearer token.
+(`run_started_at`, `run_ended_at`). The `splunk_preflight` step then verifies the target
+index against the live server, capturing its event count, sourcetypes, and the Splunk
+version via the `splunk_get_info`, `splunk_get_index_info`, and `splunk_get_metadata`
+tools. The `correlate` step builds an SPL query scoped to the test window (default: an
+error/latency rollup over the configured index; overridable per run) and calls the
+official **Splunk MCP Server** `splunk_run_query` tool through Theodosia's
+`call_upstream`. The Splunk MCP Server runs the SPL against Splunk Enterprise and returns
+the server-side rollup, which kassi pairs with the client-side k6 metrics in the final
+report. Connection is the official `mcp-remote` stdio bridge to the server's
+streamable-HTTP endpoint, authenticated with an encrypted Bearer token. Every Splunk and
+k6 tool call is recorded to the report's `mcp_provenance` block.
 
 ## How AI models and agents are integrated
 
@@ -79,12 +87,17 @@ Two layers of AI, kept deliberately narrow:
 
 1. Driver calls `step(select_mode, …)`; kassi reads a git diff or scores an OpenAPI spec
    against a natural-language intent to pick endpoints.
-2. `generate_script` calls Ollama for a Plan, then composes a self-contained k6 script.
-3. `validate_script` and `run_test` call the **k6 MCP server**, which drives load against
+2. `doc_lookup` calls the **k6 MCP server** documentation tools (`list_sections`,
+   `get_documentation`) to ground the generated script and record citations.
+3. `generate_script` calls Ollama for a Plan, then composes a self-contained k6 script.
+4. `validate_script` and `run_test` call the **k6 MCP server**, which drives load against
    the **target service**. The target emits logs/metrics that Splunk indexes.
-4. `correlate` calls the **Splunk MCP Server** with windowed SPL to read that server-side
+5. `splunk_preflight` calls the **Splunk MCP Server** to verify the index and capture its
+   metadata before correlation.
+6. `correlate` calls the **Splunk MCP Server** with windowed SPL to read that server-side
    telemetry back.
-5. `report` emits a combined client + server verdict to the driver.
-6. Every transition and every refusal is written to theodosia's immutable, hash-chained
+7. `report` emits a combined client + server verdict to the driver, including the
+   `mcp_provenance` record of every upstream tool call.
+8. Every transition and every refusal is written to Theodosia's immutable, hash-chained
    ledger; `kassi verify` confirms it has not been tampered with.
 ```
