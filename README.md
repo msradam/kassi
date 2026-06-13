@@ -308,8 +308,13 @@ unchanged; the failure only appears under concurrency.
 | `gateway` | `GET /api/quote` | **4xx** 429 throttling (too-tight rate limit) | client-vs-server error split: "throttled, not broken" |
 | `orders` | `POST /api/order` | latency **+ 504 mix** (downstream cascade) | dependency root cause, resilience recommendation |
 
-Point kassi at any of them in intent or diff mode; `petclinic` is the headline diff-mode run
-below.
+Run any of them end-to-end (starts the app, real k6, live Splunk, the grounded analysis):
+
+```bash
+uv run python scripts/verify_scenario.py feed   # or petclinic | storefront | gateway | orders
+```
+
+`petclinic` is also the headline diff-mode run below.
 
 ## Dashboard
 
