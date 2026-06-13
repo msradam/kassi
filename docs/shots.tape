@@ -47,6 +47,6 @@ Type "clear" Enter
 Sleep 400ms
 Show
 Type "./scripts/divine_petclinic.sh" Enter
-Sleep 62s
+Sleep 85s
 Screenshot docs/assets/shot-correlate.png
 Sleep 1500ms
