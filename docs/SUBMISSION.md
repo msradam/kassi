@@ -64,9 +64,12 @@ change (a git diff) or a plain-language intent and it:
    Splunk dashboard.
 
 So the loop closes both ways: a change comes in, and a change that fixes it goes out. In the
-verified petclinic run, kassi diagnosed `database is locked` and proposed the right minimal
-fix, a one-line diff removing the `time.sleep` held inside the write transaction, the exact
-cause of the lock contention.
+verified petclinic run, kassi diagnosed `database is locked` and proposed a minimal, validated
+fix (dropping the `time.sleep` held inside the write transaction, or lightening the lock with
+WAL mode), the real cause of the contention. Crucially the patch is not a model's guess at a
+diff: the model emits SEARCH/REPLACE edits (the format LLMs handle reliably), kassi applies
+them to the file, re-parses the result to confirm it still compiles, and only then renders a
+real unified diff with difflib, so the line numbers are correct and the fix is known to apply.
 
 The driving agent (Claude Code, Cursor, any MCP client) never sees k6 or Splunk. It sees
 one tool, `step(action, inputs)`, and takes the workflow one move at a time.
@@ -129,6 +132,15 @@ and recommendation.
   source. Claude is an alternative (one env var). The model never writes SPL, and when it is
   offline or its output keeps failing validation the pipeline runs the deterministic scaffold
   and a deterministic analysis, so a run never fails for lack of a model.
+- **An 8B model runs the whole loop, on-prem.** kassi defaults to IBM Granite 4.1 (8B) served
+  locally by Ollama, the first open-source LLM certified to ISO/IEC 42001 (the AI management
+  system standard), Apache-2.0 licensed and shipped with IBM's IP indemnity. Every model task
+  in the pipeline (authoring the k6 script, writing the grounded analysis, proposing the
+  remediation edits) runs on that one local model. So an enterprise runs kassi fully on-prem or
+  air-gapped: no code, no diffs, and no telemetry leave the building, there is no per-token cloud
+  bill, and the model backing it carries a recognized governance certification, which matters for
+  a tool that has autonomy over ops infrastructure. The expensive frontier model is optional, not
+  required.
 
 ## Challenges we ran into
 
@@ -165,6 +177,9 @@ and recommendation.
   that introduced the regression and the correlated root cause, the model writes a minimal
   unified **remediation diff** (for review, not auto-applied), so a change comes in and a change
   that fixes it goes out.
+- The whole loop, including the remediation, runs on a single local 8B model (IBM Granite 4.1,
+  the first ISO/IEC 42001-certified open-source LLM), so kassi is deployable on-prem or
+  air-gapped with no code or telemetry leaving the building and no per-token cost.
 
 ## What we learned
 

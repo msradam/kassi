@@ -40,7 +40,7 @@ import structlog
 from burr.core import ApplicationBuilder, Condition, State, action
 from theodosia import call_upstream, mount, safe_upstream, tracker
 
-from kassi import analysis, arcana, codegen, parse, publish
+from kassi import analysis, arcana, codegen, parse, publish, remediate
 from kassi.githost import get_diff
 from kassi.k6gen import fetch_k6_generation_guidance
 from kassi.llm import LLMError, make_llm
@@ -699,30 +699,39 @@ async def _analyze(state: State, verdict: str) -> str:
 
 
 async def _remediate(state: State, verdict: str) -> str | None:
-    """Propose a remediation: a minimal unified diff that fixes the correlated root cause,
-    grounded in the diff that introduced it. Only when we have that diff (diff mode) and a
-    server-side root cause to fix; otherwise None and the analysis carries the prose advice."""
-    diff_text = state["diff_text"]
+    """Propose a remediation: a validated unified diff that fixes the correlated root cause.
+    The model emits SEARCH/REPLACE edits (reliable, unlike model-authored unified diffs); kassi
+    applies them to the real file, validates the result still parses (AST), and renders a real
+    diff with difflib. Only in diff mode with a server-side root cause and the file on hand;
+    otherwise None, and the analysis carries the prose recommendation. A small ensemble: the
+    first candidate that applies cleanly and parses wins."""
+    diff_text, repo = state["diff_text"], state["repo_path"]
     findings = (state["correlation"] or {}).get("findings") or {}
-    if not (diff_text and (findings.get("top_error") or findings.get("worst_path"))):
+    if not (diff_text and repo and (findings.get("top_error") or findings.get("worst_path"))):
         return None
-    documents = analysis.remediation_documents(diff_text, findings, analysis.recommend(findings))
-    instruction = (
-        "Output a unified diff that fixes the root cause and clears the regression, applying the "
-        f"recommended approach. Do not remove the commit or the error handling. Run: {verdict}."
-    )
-    try:
-        text = await asyncio.to_thread(
-            make_llm().generate,
-            system=analysis.REMEDIATION_SYSTEM,
-            user=instruction,
-            documents=documents,
-        )
-        text = (text or "").replace("```diff", "").replace("```", "").strip()
-        if text and ("@@" in text or text.lstrip().startswith("---")):
-            return text
-    except LLMError as exc:
-        log.warning("remediation_llm_failed", error=str(exc))
+    path = remediate.changed_file(diff_text)
+    src_file = Path(repo) / path if path else None
+    if not (src_file and src_file.exists()):
+        return None
+    source = src_file.read_text()
+    documents = remediate.documents(source, findings, analysis.recommend(findings))
+    instruction = f"Propose the minimal fix for the root cause that clears this regression: {verdict}."
+
+    for _ in range(2):  # ensemble: first edit that applies cleanly and still parses wins
+        try:
+            text = await asyncio.to_thread(
+                make_llm().generate,
+                system=remediate.SEARCH_REPLACE_SYSTEM,
+                user=instruction,
+                documents=documents,
+            )
+        except LLMError as exc:
+            log.warning("remediation_llm_failed", error=str(exc))
+            return None
+        patched = remediate.apply_blocks(source, remediate.parse_blocks(text))
+        if patched and remediate.valid_python(patched):
+            log.info("remediation_ok", file=path)
+            return remediate.unified(source, patched, path)
     return None
 
 

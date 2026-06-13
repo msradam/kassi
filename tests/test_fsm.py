@@ -250,3 +250,30 @@ async def test_run_test_timeout_falls_back_to_scaffold(monkeypatch):
     assert result["run_result"]["http_reqs"] == 42  # the scaffold run's payload
     statuses = [c["status"] for c in result["mcp_calls"] if c["tool"] == "run_script"]
     assert statuses == ["timeout", "ok"]
+
+
+def test_remediate_applies_validates_and_diffs():
+    """The model proposes SEARCH/REPLACE; kassi applies it, validates the AST, and renders a
+    real unified diff. A non-matching block or invalid result is rejected, never returned."""
+    from kassi import remediate
+
+    source = "import time\n\n\ndef f():\n    x = 1\n    time.sleep(0.015)\n    return x\n"
+    text = (
+        "<<<<<<< SEARCH\n    time.sleep(0.015)\n=======\n"
+        "    # removed sleep held inside the critical section\n>>>>>>> REPLACE"
+    )
+    blocks = remediate.parse_blocks(text)
+    assert blocks == [("    time.sleep(0.015)", "    # removed sleep held inside the critical section")]
+
+    patched = remediate.apply_blocks(source, blocks)
+    assert patched is not None and "time.sleep" not in patched
+    assert remediate.valid_python(patched)
+
+    diff = remediate.unified(source, patched, "app.py")
+    assert "--- a/app.py" in diff and "+++ b/app.py" in diff and "@@" in diff
+
+    # a search block that does not match exactly is rejected (no partial/hallucinated edit)
+    assert remediate.apply_blocks(source, [("does not exist", "x")]) is None
+    # a syntactically invalid result is caught
+    assert not remediate.valid_python("def (:\n")
+    assert remediate.changed_file("+++ b/examples/petclinic/app.py") == "examples/petclinic/app.py"
