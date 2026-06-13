@@ -56,7 +56,7 @@ def vgradient(w: int, h: int) -> Image.Image:
 # Ordered for a sub-3-minute demo: hook, one dense pitch slide, then straight to the live demo with
 # a card per scenario, then the close. The judge sees the essentials in the first 20 seconds.
 SLIDES = [
-    {  # 1. HOOK — front-load what it is and that Splunk AI is used live
+    {  # 1. TITLE
         "kicker": "SPLUNK AGENTIC OPS HACKATHON  ·  OBSERVABILITY TRACK",
         "title": "kassi",
         "title_size": 150,
@@ -67,62 +67,36 @@ SLIDES = [
             "Live at runtime: the official Splunk MCP Server + the Splunk AI Toolkit.",
         ],
     },
-    {  # 2. THE PITCH — the one slide a judge needs; problem + loop + Splunk proof
-        "kicker": "WHY  ·  AND WHAT IT DOES, ALL ON SPLUNK AI AT RUNTIME",
+    {  # 2. WHY
+        "kicker": "THE PROBLEM",
         "title": "~80% of outages trace to a change.",
         "title_size": 72,
         "body": [
-            "The warning is there; it isn't believed, because the impact only shows up in",
-            "server-side telemetry after something exercises the change. kassi closes the loop:",
+            "The warning is usually there. It just isn't believed.",
             "",
-            "1.  Grafana k6 MCP Server drives real load at the changed endpoint",
-            "2.  the official Splunk MCP Server reads the server-side truth",
-            "3.  the Splunk AI Toolkit forecasts the trend and flags the anomaly",
-            "4.  a local model writes the cited analysis and the remediation fix",
+            "A change's real impact only surfaces in server-side telemetry, after something",
+            "exercises it — and nobody generates traffic and correlates it with Splunk by hand",
+            "before shipping. So it almost never happens, and the change takes down prod at 2am.",
+        ],
+        "accent": "kassi makes the warning undeniable.",
+    },
+    {  # 3. WHAT IT DOES (architecture)
+        "kicker": "HOW IT WORKS  ·  ONE AUDITED STATE MACHINE",
+        "title": "It closes the loop.",
+        "body": [
+            "A local Granite model drives a Burr state machine over MCP, one phase at a time:",
+            "",
+            "→   Grafana k6 MCP Server drives real load at the changed endpoint",
+            "→   the official Splunk MCP Server reads the server-side truth",
+            "→   the Splunk AI Toolkit forecasts the trend and flags the anomaly",
+            "→   Granite writes the cited analysis + fix, Guardian audits it, sealed to the ledger",
         ],
     },
-    {  # 3. DEMO transition
+    {  # 4. LIVE DEMO
         "kicker": "LIVE  ·  NOTHING CANNED",
         "title": "Watch it run.",
         "accent": "Real app, real k6, the official Splunk MCP Server, a local model.",
-        "body": ["Two changes. Two different failure signatures. Same agent, same dashboard."],
-    },
-    {  # 4. SCENARIO 1 — errors, with a root cause only Splunk shows
-        "kicker": "SCENARIO 1   ·   petclinic   ·   POST /api/visits",
-        "title": "A write-lock under load",
-        "accent": "58.8% 5xx",
-        "body": [
-            "What the client sees: more than half of requests fail under concurrency.",
-            "What only Splunk reveals: root cause  database is locked, 1,797 times.",
-            "kassi's fix: enable WAL / shorten the held write transaction.",
-        ],
-    },
-    {  # 5. SCENARIO 2 — the opposite signature: latency, ZERO errors
-        "kicker": "SCENARIO 2   ·   storefront   ·   POST /api/checkout",
-        "title": "An N+1 query",
-        "accent": "latency, and zero errors",
-        "body": [
-            "What the client sees: it just got slower. No errors at all.",
-            "What only Splunk reveals: server-side db_time on the changed endpoint.",
-            "Invisible to the error rate — and obvious in the client-plus-server join.",
-        ],
-    },
-    {  # 6. CLOSE — why it wins, the differentiators a judge scores
-        "kicker": "WHY KASSI",
-        "title": "Fully local. Fully audited.",
-        "body": [
-            "Driver, writer, and auditor are one local 8B family: Granite 4.1 + Guardian 4.1,",
-            "the first ISO/IEC 42001-certified open LLM. On-prem, air-gapped, no per-token cost.",
-            "Two MCP servers, deep usage. Splunk's own ML does the forecasting.",
-            "And the agent is observable too: its state-machine walk streams back to Splunk.",
-        ],
-    },
-    {  # 7. SIGN-OFF
-        "kicker": "",
-        "title": "kassi",
-        "title_size": 150,
-        "accent": "Divines disaster, crafts the cure.",
-        "body": ["Observability  ·  Best Use of Splunk MCP Server  ·  Best Use of Developer Tools"],
+        "body": ["Two changes, two different failure signatures — same agent, same dashboard."],
     },
 ]
 
