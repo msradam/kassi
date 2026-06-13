@@ -10,8 +10,9 @@ Flow:
     select_mode ─diff──→ read_diff → extract_endpoints ┐
                 └intent─→ parse_intent ────────────────┴→ doc_lookup → scaffold → generate_script
     generate_script → validate_script ─needs_fix─→ fix_script → validate_script  (bounded loop)
-    validate_script → run_test ─splunk?─→ splunk_preflight → correlate → detect_anomalies → report
-                              └─else──────────────────────────────────────────────────────→ report  (also on give-up)
+    validate_script → run_test ─splunk?─→ splunk_preflight → correlate → detect_anomalies ┐
+                              └─else───────────────────────────────────────────────────┐ │
+    (also on give-up) ───────────────────────────────────────────────────────────────→ analyze → screen → report
 
 ``scaffold`` composes a deterministic k6 baseline from the OpenAPI spec; ``generate_script``
 then has the model author the final script on top of it, guided by k6's own
@@ -22,9 +23,11 @@ scaffold. So the model never produces an unvalidated script that reaches ``run_t
 ``doc_lookup`` (k6 MCP docs), ``splunk_preflight`` (Splunk index/metadata/info), and
 ``detect_anomalies`` (the AI Toolkit's ``StateSpaceForecast``, or core ``predict`` as a
 fallback, plus ``anomalydetection`` over the test window) are MCP-native phases: all degrade
-gracefully via ``safe_upstream`` and record every upstream
-tool call to ``mcp_calls`` for the report's provenance. ``report`` narrates the run with the
-model, themed as a tarot reading (falling back to the static omens when the model is absent).
+gracefully via ``safe_upstream`` and record every upstream tool call to ``mcp_calls`` for the
+report's provenance. Every path then converges on three model phases: ``analyze`` (the writer:
+Granite 4.1 composes the cited analysis and the remediation diff), ``screen`` (the auditor: a
+separate Granite Guardian model judges whether that analysis is grounded in its evidence), and
+``report`` (narrates the run as a tarot reading and seals the verdict to the ledger).
 """
 
 from __future__ import annotations
@@ -40,7 +43,7 @@ import structlog
 from burr.core import ApplicationBuilder, Condition, State, action
 from theodosia import call_upstream, mount, safe_upstream, tracker
 
-from kassi import analysis, arcana, codegen, parse, publish, remediate
+from kassi import analysis, arcana, codegen, guardian, parse, publish, remediate
 from kassi.githost import get_diff
 from kassi.k6gen import fetch_k6_generation_guidance
 from kassi.llm import LLMError, make_llm
@@ -519,11 +522,65 @@ async def detect_anomalies(state: State) -> State:
 @action(
     reads=[
         "endpoints",
-        "plan",
         "run_result",
         "correlation",
         "anomalies",
         "diff_text",
+        "repo_path",
+        "validation_error",
+        "error",
+        "mode",
+        "splunk_preflight",
+    ],
+    writes=["analysis", "recommendation", "remediation", "analysis_context", "verdict", "stage"],
+)
+async def analyze(state: State) -> State:
+    """The writer phase (Granite 4.1): turn the correlated facts into a cited analysis (cause,
+    evidence, recommendation) and, in diff mode, a validated remediation diff. The evidence the
+    analysis is grounded on is captured verbatim so the next phase can screen the analysis against
+    it. Deterministic fallbacks keep this phase working when no model is configured."""
+    verdict = _verdict(state)
+    findings = (state["correlation"] or {}).get("findings") or {}
+    evidence = analysis.gather_evidence(
+        run_result=state["run_result"],
+        findings=findings,
+        anomalies=state["anomalies"],
+        preflight=state["splunk_preflight"],
+    )
+    analysis_text = await _analyze(state, verdict, evidence)
+    remediation = await _remediate(state, verdict)
+    context = "\n".join(f"[{source}] {claim}" for claim, source in evidence)
+    return state.update(
+        analysis=analysis_text,
+        recommendation=analysis.recommend(findings),
+        remediation=remediation,
+        analysis_context=context,
+        verdict=verdict,
+        stage="analyzed",
+    )
+
+
+@action(reads=["analysis", "analysis_context"], writes=["groundedness", "stage"])
+async def screen(state: State) -> State:
+    """The auditor phase (Granite Guardian): an independent model judges whether the analysis is
+    grounded in the evidence it cites, before the verdict is published. The pass/fail verdict is
+    sealed to the report ledger. Non-blocking: degrades to unavailable when Guardian is off or
+    unreachable, so a run never fails for lack of the screen."""
+    text, context = state["analysis"], state["analysis_context"]
+    if not (guardian.guardian_configured() and text and context):
+        return state.update(groundedness={"available": False, "grounded": None}, stage="screened")
+    verdict = await asyncio.to_thread(guardian.make_guardian().groundedness, context=context, response=text)
+    log.info("screen_done", available=verdict.get("available"), grounded=verdict.get("grounded"))
+    return state.update(groundedness=verdict, stage="screened")
+
+
+@action(
+    reads=[
+        "endpoints",
+        "plan",
+        "run_result",
+        "correlation",
+        "anomalies",
         "validation_error",
         "error",
         "mode",
@@ -532,16 +589,19 @@ async def detect_anomalies(state: State) -> State:
         "splunk_preflight",
         "mcp_calls",
         "fix_attempts",
+        "analysis",
+        "recommendation",
+        "remediation",
+        "groundedness",
+        "verdict",
     ],
     writes=["report", "stage"],
 )
 async def report(state: State) -> State:
-    """Assemble the final report and have the model narrate the run as a tarot reading. Terminal action."""
-    verdict = _verdict(state)
-    analysis_text = await _analyze(state, verdict)
-    remediation = await _remediate(state, verdict)
+    """Assemble the final report from the analyzed and screened state and have the model narrate
+    the run as a tarot reading. Terminal action."""
+    verdict = state["verdict"] or _verdict(state)
     narration = await _narrate(state, verdict)
-    findings = (state["correlation"] or {}).get("findings") or {}
     summary = {
         "mode": state["mode"],
         "endpoints_tested": state["endpoints"],
@@ -558,9 +618,10 @@ async def report(state: State) -> State:
             "splunk_preflight": state["splunk_preflight"],
         },
         "narration": narration,
-        "analysis": analysis_text,
-        "recommendation": analysis.recommend(findings),
-        "remediation": remediation,
+        "analysis": state["analysis"],
+        "recommendation": state["recommendation"],
+        "remediation": state["remediation"],
+        "groundedness": state["groundedness"],
         "verdict": verdict,
     }
     if publish.publish_configured():
@@ -639,6 +700,14 @@ def _phase_facts(state: State, verdict: str) -> str:
                 f"{an.get('buckets_analyzed', 0)} buckets); {an.get('anomalous_buckets', 0)} "
                 f"anomalous bucket(s), {an.get('forecast_breaches', 0)} band breach(es)"
             )
+    if state["analysis"]:
+        cure = " and a remediation diff" if state["remediation"] else ""
+        lines.append(f"- The Sun (analyze): wrote the cited analysis{cure}")
+    if (g := state["groundedness"]) and g.get("available"):
+        lines.append(
+            f"- The Hanged Man (screen): Guardian groundedness check = "
+            f"{'grounded' if g.get('grounded') else 'UNGROUNDED'}"
+        )
     lines.append(f"- Judgement (report): verdict = {verdict}")
     return "\n".join(lines)
 
@@ -649,6 +718,9 @@ def _omen_fallback(state: State, verdict: str) -> str:
         ran.append("run_test")
     if state["splunk_enabled"]:
         ran += ["splunk_preflight", "correlate", "detect_anomalies"]
+    ran.append("analyze")
+    if (state["groundedness"] or {}).get("available"):
+        ran.append("screen")
     ran.append("report")
     lines = []
     for phase in ran:
@@ -660,16 +732,10 @@ def _omen_fallback(state: State, verdict: str) -> str:
     return "\n".join(lines)
 
 
-async def _analyze(state: State, verdict: str) -> str:
+async def _analyze(state: State, verdict: str, evidence: list[tuple[str, str]]) -> str:
     """The practical, cited writeup: cause, endpoints, evidence, recommendation. Model-written
     when one is configured, deterministic otherwise, so it always exists."""
     findings = (state["correlation"] or {}).get("findings") or {}
-    evidence = analysis.gather_evidence(
-        run_result=state["run_result"],
-        findings=findings,
-        anomalies=state["anomalies"],
-        preflight=state["splunk_preflight"],
-    )
     fallback = analysis.compose_analysis(
         verdict,
         mode=state["mode"],
@@ -763,30 +829,34 @@ def build_application():
             splunk_preflight=splunk_preflight,
             correlate=correlate,
             detect_anomalies=detect_anomalies,
+            analyze=analyze,
+            screen=screen,
             report=report,
         )
         .with_transitions(
             ("select_mode", "read_diff", Condition.expr("stage == 'selected' and mode == 'diff'")),
             ("select_mode", "parse_intent", Condition.expr("stage == 'selected' and mode == 'intent'")),
-            ("read_diff", "report", Condition.expr("stage == 'failed'")),
+            ("read_diff", "analyze", Condition.expr("stage == 'failed'")),
             ("read_diff", "extract_endpoints", Condition.expr("stage == 'diffed'")),
             ("extract_endpoints", "doc_lookup", Condition.expr("stage == 'scoped'")),
-            ("parse_intent", "report", Condition.expr("stage == 'failed'")),
+            ("parse_intent", "analyze", Condition.expr("stage == 'failed'")),
             ("parse_intent", "doc_lookup", Condition.expr("stage == 'scoped'")),
             ("doc_lookup", "scaffold", Condition.expr("stage == 'documented'")),
-            ("scaffold", "report", Condition.expr("stage == 'failed'")),
+            ("scaffold", "analyze", Condition.expr("stage == 'failed'")),
             ("scaffold", "generate_script", Condition.expr("stage == 'scaffolded'")),
             ("generate_script", "validate_script", Condition.expr("stage == 'generated'")),
             ("validate_script", "fix_script", Condition.expr("stage == 'needs_fix'")),
             ("fix_script", "validate_script", Condition.expr("stage == 'generated'")),
             ("validate_script", "run_test", Condition.expr("stage == 'validated'")),
-            ("validate_script", "report", Condition.expr("stage == 'failed_validation'")),
+            ("validate_script", "analyze", Condition.expr("stage == 'failed_validation'")),
             ("run_test", "splunk_preflight", Condition.expr("stage == 'ran' and splunk_enabled")),
-            ("run_test", "report", Condition.expr("stage == 'ran' and not splunk_enabled")),
-            ("run_test", "report", Condition.expr("stage == 'failed'")),
+            ("run_test", "analyze", Condition.expr("stage == 'ran' and not splunk_enabled")),
+            ("run_test", "analyze", Condition.expr("stage == 'failed'")),
             ("splunk_preflight", "correlate", Condition.expr("stage == 'preflighted'")),
             ("correlate", "detect_anomalies", Condition.expr("stage == 'correlated'")),
-            ("detect_anomalies", "report", Condition.expr("stage == 'detected'")),
+            ("detect_anomalies", "analyze", Condition.expr("stage == 'detected'")),
+            ("analyze", "screen", Condition.expr("stage == 'analyzed'")),
+            ("screen", "report", Condition.expr("stage == 'screened'")),
         )
         .with_state(
             stage="new",
@@ -812,6 +882,12 @@ def build_application():
             splunk_preflight=None,
             correlation=None,
             anomalies=None,
+            analysis=None,
+            recommendation=None,
+            remediation=None,
+            analysis_context=None,
+            verdict=None,
+            groundedness=None,
             mcp_calls=[],
             report=None,
             error=None,

@@ -34,12 +34,14 @@ def build_event(report: dict[str, Any]) -> dict[str, Any]:
     top_error = findings.get("top_error") or {}
     anomaly = report.get("anomalies") or {}
     endpoints = report.get("endpoints_tested") or []
+    grounded = (report.get("groundedness") or {}).get("grounded")
 
     failed_rate = rr.get("http_req_failed_rate")
     return {
         "verdict": report.get("verdict"),
         "recommendation": report.get("recommendation"),
         "analysis": report.get("analysis"),
+        "grounded": grounded,
         "mode": report.get("mode"),
         "endpoints": ", ".join(f"{e.get('method')} {e.get('path')}" for e in endpoints) or None,
         "endpoint_count": len(endpoints),

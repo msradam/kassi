@@ -57,11 +57,14 @@ change (a git diff) or a plain-language intent and it:
    telemetry over the exact test window, then runs the AI Toolkit's `StateSpaceForecast`
    (with core `predict` as a fallback) and `anomalydetection` over that window to locate the
    saturation onset statistically, and
-5. reports a combined client plus server verdict with a cited, grounded analysis (root cause,
-   evidence, recommendation) and a **proposed remediation**: a minimal unified diff that fixes
-   the root cause, written from the diff that introduced it. The model narrates each phase as a
-   tarot reading; every upstream tool call is on a provenance record; the run is published to a
-   Splunk dashboard.
+5. writes a cited, grounded analysis (root cause, evidence, recommendation) and a **proposed
+   remediation**: a minimal unified diff that fixes the root cause, written from the diff that
+   introduced it,
+6. screens that analysis with a separate IBM Granite Guardian model, an independent check that
+   the writeup does not contradict the telemetry it cites, and seals the pass/fail to the ledger,
+   then reports the combined client plus server verdict. The model narrates each phase as a tarot
+   reading; every upstream tool call is on a provenance record; the run is published to a Splunk
+   dashboard.
 
 So the loop closes both ways: a change comes in, and a change that fixes it goes out. In the
 verified petclinic run, kassi diagnosed `database is locked` and proposed a minimal, validated
@@ -132,6 +135,15 @@ and recommendation.
   source. Claude is an alternative (one env var). The model never writes SPL, and when it is
   offline or its output keeps failing validation the pipeline runs the deterministic scaffold
   and a deterministic analysis, so a run never fails for lack of a model.
+- **Two models, two roles: a writer and an auditor.** The analysis is written by Granite 4.1
+  (the writer), then a separate phase, `screen`, hands that analysis and the evidence it cites to
+  IBM Granite Guardian (the auditor) to judge groundedness: does the writeup contradict the
+  measured telemetry it claims to be based on? Guardian returns a pass/fail that is sealed to the
+  report ledger. So the writer model is not trusted on its own word; an independent model checks
+  it before the verdict is published. Guardian fires on the failure that matters most for a tool
+  meant to be believed, an analysis that reports the system as healthy when it was not, and the
+  phase degrades to "unavailable" (never blocks) when Guardian is off. Different state-machine
+  phase, different model: the FSM makes that composition clean.
 - **An 8B model runs the whole loop, on-prem.** kassi defaults to IBM Granite 4.1 (8B) served
   locally by Ollama, the first open-source LLM certified to ISO/IEC 42001 (the AI management
   system standard), Apache-2.0 licensed and shipped with IBM's IP indemnity. Every model task
@@ -180,6 +192,9 @@ and recommendation.
 - The whole loop, including the remediation, runs on a single local 8B model (IBM Granite 4.1,
   the first ISO/IEC 42001-certified open-source LLM), so kassi is deployable on-prem or
   air-gapped with no code or telemetry leaving the building and no per-token cost.
+- The published analysis is screened by an independent model. A separate Granite Guardian phase
+  judges whether the writeup is grounded in the telemetry it cites and seals that verdict to the
+  ledger, so the writer model is audited by a second model rather than trusted on its own word.
 
 ## What we learned
 

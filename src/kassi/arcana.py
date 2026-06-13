@@ -34,6 +34,16 @@ ARCANA: dict[str, tuple[str, str, str]] = {
         "The Star",
         "Splunk's own forecast is cast; where the load breaches the band is revealed.",
     ),
+    "analyze": (
+        "XIX",
+        "The Sun",
+        "The reading is made plain: cause, evidence, and the cure laid bare.",
+    ),
+    "screen": (
+        "XII",
+        "The Hanged Man",
+        "Seen again through another's eyes: the reading is judged grounded, or not.",
+    ),
     "report": ("XX", "Judgement", "The verdict is spoken and sealed to the ledger."),
 }
 

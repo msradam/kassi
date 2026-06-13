@@ -106,6 +106,8 @@ async def _no_guidance(description: str) -> None:
 def _offline_llm(monkeypatch):
     monkeypatch.setattr(kassi_app, "make_llm", lambda *a, **k: _FakeLLM())
     monkeypatch.setattr(kassi_app, "fetch_k6_generation_guidance", _no_guidance)
+    # Keep the Guardian screen hermetic; full-run tests exercise the phase with it disabled.
+    monkeypatch.setenv("KASSI_GUARDIAN", "0")
 
 
 async def test_full_run_intent_mode():
@@ -124,6 +126,11 @@ async def test_full_run_intent_mode():
     assert report["verdict"] == "passed"
     assert report["run_result"]["http_reqs"] == 120
     assert report["run_result"]["http_req_duration_p95_ms"] == 14.2
+
+    # the analyze and screen phases ran: a cited analysis exists and the screen verdict is recorded
+    # (unavailable here because Guardian is disabled for the test).
+    assert isinstance(report["analysis"], str) and report["analysis"].strip()
+    assert report["groundedness"] == {"available": False, "grounded": None}
 
     # scaffold built a deterministic load plan; the model authored the script on top of it.
     assert report["plan"]["test_taxonomy"] == "load"
@@ -250,6 +257,36 @@ async def test_run_test_timeout_falls_back_to_scaffold(monkeypatch):
     assert result["run_result"]["http_reqs"] == 42  # the scaffold run's payload
     statuses = [c["status"] for c in result["mcp_calls"] if c["tool"] == "run_script"]
     assert statuses == ["timeout", "ok"]
+
+
+async def test_screen_records_guardian_groundedness(monkeypatch):
+    """The screen phase passes the evidence as context and the analysis as the judged response to
+    a separate Guardian model, and seals the grounded verdict to the report state."""
+    monkeypatch.setenv("KASSI_GUARDIAN", "1")
+    seen = {}
+
+    class _FakeGuardian:
+        def groundedness(self, *, context, response):
+            seen["context"], seen["response"] = context, response
+            return {"available": True, "grounded": True, "label": "No", "model": "granite3-guardian:8b"}
+
+    monkeypatch.setattr(kassi_app.guardian, "make_guardian", lambda: _FakeGuardian())
+    state = State(
+        {"analysis": "Summary\nA load-only regression.", "analysis_context": "[Splunk correlate] 7 5xx"}
+    )
+    result = await kassi_app.screen(state)
+    assert result["stage"] == "screened"
+    assert result["groundedness"]["grounded"] is True
+    assert result["groundedness"]["available"] is True
+    assert seen["context"] == "[Splunk correlate] 7 5xx"
+    assert seen["response"] == "Summary\nA load-only regression."
+
+
+async def test_screen_skips_when_guardian_disabled(monkeypatch):
+    monkeypatch.setenv("KASSI_GUARDIAN", "0")
+    result = await kassi_app.screen(State({"analysis": "x", "analysis_context": "y"}))
+    assert result["stage"] == "screened"
+    assert result["groundedness"] == {"available": False, "grounded": None}
 
 
 def test_remediate_applies_validates_and_diffs():
