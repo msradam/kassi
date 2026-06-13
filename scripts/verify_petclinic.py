@@ -135,9 +135,14 @@ async def main() -> None:
     report = state["report"]
     corr = report.get("correlation") or {}
     findings = corr.get("findings") or {}
+    rr = report["run_result"] or {}
     print("\nverdict:        ", report["verdict"])
     print("endpoints:      ", [f"{e['method']} {e['path']}" for e in report["endpoints_tested"]])
-    print("k6 client-side: ", report["run_result"])
+    print(
+        "k6 client-side:  "
+        f"{rr.get('http_reqs')} reqs, p95 {rr.get('http_req_duration_p95_ms')} ms, "
+        f"{round((rr.get('http_req_failed_rate') or 0) * 100, 1)}% failed"
+    )
     print("\n--- what Splunk gave us (server-side, over the exact window) ---")
     wp, te, onset = findings.get("worst_path"), findings.get("top_error"), findings.get("onset")
     print(

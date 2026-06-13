@@ -46,7 +46,7 @@ Hide
 Type "clear" Enter
 Sleep 400ms
 Show
-Type "./scripts/divine.sh" Enter
-Sleep 26s
+Type "./scripts/divine_petclinic.sh" Enter
+Sleep 50s
 Screenshot docs/assets/shot-correlate.png
 Sleep 1500ms

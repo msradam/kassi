@@ -45,13 +45,13 @@ Sleep 4500ms
 Type "clear"
 Enter
 Sleep 400ms
-Type "# now draw the whole spread against live Splunk; the plan is filled by Claude Haiku"
+Type "# point kassi at a code change (a git diff): it picks the new endpoint, load-tests it live, and explains the result from Splunk"
 Enter
 Sleep 800ms
-Type "./scripts/divine.sh"
+Type "./scripts/divine_petclinic.sh"
 Enter
-Sleep 22s
+Sleep 55s
 
-Type "# one agent, 18 tool calls across two MCP servers -- client 5xx explained by server-side telemetry, narrated as a tarot reading"
+Type "# one agent, 18 tool calls across two MCP servers -- the new endpoint's 5xx explained by Splunk as 'database is locked', narrated as a tarot reading"
 Enter
 Sleep 3s
