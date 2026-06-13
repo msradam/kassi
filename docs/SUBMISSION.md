@@ -1,10 +1,20 @@
-# Kassi: Splunk Agentic Ops Hackathon submission
+# kassi — the load test that explains itself
 
-Track: Observability (primary); also Platform & Developer Experience.
-Bonus prize targeted: Best Use of Splunk MCP Server.
+**Elevator pitch.** Load testing tells you *that* a change made an endpoint slower; it never
+tells you *why* — the client-side numbers live in k6, the server-side truth lives in Splunk,
+and nobody joins them in CI. kassi is an agent that does both in one pass: point it at a code
+change, it load-tests the affected endpoint through the Grafana k6 MCP server, then correlates
+the result with the target's server-side telemetry through the official Splunk MCP Server —
+naming the root cause (`database is locked`), citing every fact to the query that produced it,
+forecasting the trend with Splunk's own ML, and recommending the fix. Every step and every
+refusal is written to a hash-chained, auditable ledger, so it is safe to run unattended in CI.
+
+**Track:** Observability (primary); also Platform & Developer Experience.
+**Bonus prizes targeted:** Best Use of Splunk MCP Server; Best Use of Splunk Developer Tools.
 
 Verified end-to-end against Splunk Enterprise 10.4.0 with the official Splunk MCP Server
-(Splunkbase 7931, v1.2.0). See the case study in the README and `docs/SPLUNK_SETUP.md`.
+(Splunkbase 7931, v1.2.0) and a local IBM Granite 4.1 model. See the case study in the README
+and `docs/SPLUNK_SETUP.md`. Built new during the submission period for this hackathon.
 
 ## Inspiration
 
@@ -50,11 +60,19 @@ k6's own `generate_script` prompt and repaired it from a real k6 validation erro
 the `web` index on the official Splunk MCP Server (`access_json` sourcetype, Splunk 10.4.0),
 drove 2937 client-side k6 requests (p95 318 ms, 59.4% failed), then correlated them to the
 server-side telemetry over the test window: the new `POST /api/visits` at 59.4% 5xx and p95
-318.44 ms, root cause `database is locked` (1797x), and the AI Toolkit's
-`StateSpaceForecast` forecast the latency band while `anomalydetection` flagged the anomalous
-bucket statistically. The client failure rate is
-explained by the server-side errors, correlated automatically, with every tool call on an
-audit ledger.
+318.44 ms, root cause `database is locked` (1797x), and the AI Toolkit's `StateSpaceForecast`
+forecast the latency band while `anomalydetection` flagged the anomalous bucket statistically.
+The client failure rate is explained by the server-side errors, correlated automatically, with
+every tool call on an audit ledger.
+
+It ships **five demo targets spanning the load-failure taxonomy**, so the correlation is proven
+on distinct signatures rather than one trick: a SQLite write-lock (5xx under concurrency, the
+case above), an N+1 query (latency with **zero errors**, visible only in server-side `db_time`),
+an unbounded recompute (latency **rising over the run** — where the forecast earns its keep:
+Granite projects p95 climbing past the current value), a too-tight rate limit (**429** throttling,
+exercising the 4xx-vs-5xx split), and a downstream timeout cascade (latency **plus 504s**, a
+dependency root cause whose fix is resilience, not query tuning). Each yields a different cause
+and recommendation.
 
 ## How we built it
 
@@ -138,6 +156,9 @@ audit ledger.
   run) without the pipeline ever failing for lack of a model, and Python still owns the SPL.
 - k6 2.0 folding the MCP server into the `k6 x mcp` subcommand removed an entire install
   step and made the demo easier to reproduce.
+- Nothing in an autonomous agent can be allowed to hang. A model-authored k6 script can wedge
+  the runner so the MCP call never returns, so every blocking upstream call is bounded by a
+  timeout that falls back to the deterministic scaffold: the pipeline degrades, never stalls.
 
 ## What's next for Kassi: Synthetic Load Generation
 
