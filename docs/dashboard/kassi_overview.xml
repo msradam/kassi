@@ -21,13 +21,15 @@
   <row>
     <panel>
       <single>
-        <title>k6 client p95 (ms)</title>
+        <title>k6 client p95</title>
         <search>
           <query>index=kassi_runs sourcetype=kassi:run | head 1 | fields k6_p95_ms</query>
           <earliest>-30d</earliest>
           <latest>now</latest>
         </search>
-        <option name="numberPrecision">0.00</option>
+        <option name="numberPrecision">0.0</option>
+        <option name="unit">ms</option>
+        <option name="unitPosition">after</option>
         <option name="rangeColors">["0x53a051","0xf8be34","0xdc4e41"]</option>
         <option name="rangeValues">[100,250]</option>
         <option name="useColors">1</option>
@@ -62,13 +64,15 @@
     </panel>
     <panel>
       <single>
-        <title>server-side p95 (ms)</title>
+        <title>server-side p95</title>
         <search>
           <query>index=kassi_runs sourcetype=kassi:run | head 1 | fields srv_p95_ms</query>
           <earliest>-30d</earliest>
           <latest>now</latest>
         </search>
-        <option name="numberPrecision">0.00</option>
+        <option name="numberPrecision">0.0</option>
+        <option name="unit">ms</option>
+        <option name="unitPosition">after</option>
         <option name="rangeColors">["0x53a051","0xf8be34","0xdc4e41"]</option>
         <option name="rangeValues">[100,250]</option>
         <option name="useColors">1</option>
@@ -89,6 +93,9 @@
         <option name="charting.axisTitleX.text">run</option>
         <option name="charting.axisTitleY.text">p95 (ms)</option>
         <option name="charting.chart.nullValueMode">connect</option>
+        <option name="charting.chart.showMarkers">true</option>
+        <option name="charting.lineWidth">3</option>
+        <option name="charting.fieldColors">{"k6_p95_ms":0x4f9ed6,"srv_p95_ms":0xd6336c}</option>
         <option name="charting.legend.placement">bottom</option>
       </chart>
     </panel>
@@ -96,12 +103,15 @@
       <chart>
         <title>server-side errors by endpoint (last 60m)</title>
         <search>
-          <query>index=web sourcetype=access_json | stats count AS requests, sum(eval(if(status&gt;=500,1,0))) AS errors, round(perc95(response_time),1) AS p95_ms BY path | sort - errors</query>
+          <query>index=web sourcetype=access_json | stats count AS requests, sum(eval(if(status&gt;=500,1,0))) AS errors, perc95(response_time) AS p95_ms BY path | eval p95_ms=round(p95_ms,1) | sort - errors</query>
           <earliest>-60m</earliest>
           <latest>now</latest>
         </search>
         <option name="charting.chart">column</option>
         <option name="charting.axisTitleX.text">endpoint</option>
+        <option name="charting.axisTitleY.text">count / ms</option>
+        <option name="charting.fieldColors">{"errors":0xdc4e41,"requests":0x4f9ed6,"p95_ms":0xf8be34}</option>
+        <option name="charting.chart.showDataLabels">all</option>
         <option name="charting.legend.placement">bottom</option>
       </chart>
     </panel>
