@@ -26,12 +26,11 @@ import httpx
 from kassi.llm import DEFAULT_MODEL, DEFAULT_NUM_CTX
 
 DRIVER_SYSTEM = (
-    "You are driving a state machine over MCP. Take exactly ONE action per turn by calling the "
-    "`step` tool with the single appropriate `action` and its `inputs`. Never invent an action: "
-    "choose only from the reachable actions you are given. Every refusal carries "
-    "`valid_next_actions` to recover from. Begin with `select_mode`, passing the run's parameters "
-    "as inputs, and continue until the workflow reaches its terminal `report` action. Do not write "
-    "prose; just call the tool."
+    "You are driving a state machine over MCP. The run has already started. Take exactly ONE "
+    "action per turn by calling the `step` tool with the single appropriate `action` from the "
+    "reachable actions you are given (most phases need no inputs). Never invent an action; every "
+    "refusal carries `valid_next_actions` to recover from. Continue until the workflow reaches its "
+    "terminal `report` action. Do not write prose; just call the tool."
 )
 
 
@@ -91,6 +90,7 @@ async def drive_granite(
     server: Any,
     *,
     prompt: str,
+    prelude: tuple[str, dict] | None = None,
     model: str = DEFAULT_MODEL,
     host: str | None = None,
     max_turns: int = 40,
@@ -99,7 +99,12 @@ async def drive_granite(
     on_step: Any = None,
 ) -> dict[str, Any]:
     """Run Granite against a mounted kassi server until the FSM is terminal or the cap is hit.
-    Returns a transcript: ``turns`` (one per executed action), ``final_state``, ``stopped_on``."""
+    Returns a transcript: ``turns`` (one per executed action), ``final_state``, ``stopped_on``.
+
+    ``prelude`` is an optional ``(action, inputs)`` executed deterministically before the model
+    takes over. The run's entry parameters (which repo, which target, which index) are operator
+    config, not a model decision, so the pilot seeds ``select_mode`` with them and Granite drives
+    every workflow phase from there."""
     from fastmcp import Client
 
     host = host or os.environ.get("OLLAMA_HOST", "http://localhost:11434")
@@ -108,6 +113,14 @@ async def drive_granite(
     async with Client(server) as client:
         tools = _mcp_tools_to_ollama(await client.list_tools())
         graph = await _resource(client, "theodosia://graph")
+
+        if prelude is not None:
+            action, inputs = prelude
+            r = await client.call_tool("step", {"action": action, "inputs": inputs})
+            payload = r.structured_content or {"content": str(r.content)}
+            transcript["turns"].append({"action": action, "result": payload})
+            if on_step is not None:
+                await on_step(action, payload)
         reachable = _reachable(await _resource(client, "theodosia://next"))
 
         messages: list[dict[str, Any]] = [

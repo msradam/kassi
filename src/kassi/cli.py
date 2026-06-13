@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import subprocess
+from pathlib import Path
 
 import typer
 from dotenv import load_dotenv
@@ -19,6 +20,19 @@ from kassi import arcana
 from kassi.app import build_application
 from kassi.pilot import drive_granite
 from kassi.upstream import k6_warm_command, upstream
+
+# ANSI palette for the pilot stream, keyed to kassi's magenta cover scheme.
+_MAGENTA, _CYAN, _GREEN, _YELLOW = "\033[38;5;205m", "\033[38;5;80m", "\033[38;5;78m", "\033[38;5;179m"
+_DIM, _BOLD, _RESET = "\033[2m", "\033[1m", "\033[0m"
+
+
+def _outcome_color(stage: str) -> str:
+    s = stage.lower()
+    if any(k in s for k in ("regression", "fail", "ungrounded", "error", "no run")):
+        return _MAGENTA
+    if any(k in s for k in ("degraded", "timeout", "repaired", "refused")):
+        return _YELLOW
+    return _GREEN
 
 
 def main() -> int:
@@ -57,34 +71,59 @@ def main() -> int:
         per-phase work as it goes; the `screen` phase hands off to Granite Guardian. Driver,
         writer, and auditor are all local.
         """
+        repo = str(Path(repo_path).resolve()) if repo_path else ""
+        inputs = {"target_base_url": target_base_url, "splunk_index": splunk_index}
         if intent.strip():
-            task = f'Run kassi in intent mode. Call step(select_mode) with inputs intent="{intent}"'
+            inputs["intent"] = intent
+            inputs["repo_path"] = repo
         else:
-            task = f'Run kassi in diff mode. Call step(select_mode) with inputs repo_path="{repo_path}", ref="{ref}"'
-        task += (
-            f', target_base_url="{target_base_url}", splunk_index="{splunk_index}". '
-            "Then drive every following phase to completion."
-        )
+            inputs["repo_path"] = repo
+            inputs["ref"] = ref
+        task = "Drive the kassi workflow to completion, one phase per turn, until it reaches report."
 
         async def on_step(action: str, payload: dict) -> None:
-            card = arcana.ARCANA.get(action, ("", action, ""))[1]
-            stage = payload.get("stage") or payload.get("error") or "refused"
-            print(f"{arcana.SIGIL}  {card} ({action}) -> {stage}")
+            num, card, _ = arcana.ARCANA.get(action, ("", action, ""))
+            st = payload.get("state") or {}
+            if payload.get("error"):
+                status = "refused"
+            elif action == "screen":
+                g = st.get("groundedness") or {}
+                status = (
+                    "grounded" if g.get("grounded") else ("ungrounded" if g.get("available") else "screened")
+                )
+            elif action == "report":
+                v = (st.get("verdict") or "").lower()
+                status = (
+                    "regression"
+                    if "regression" in v
+                    else ("failed" if v.startswith(("failed", "no run")) else "passed")
+                )
+            else:
+                status = st.get("stage") or "ok"
+            col = _outcome_color(status)
+            print(
+                f"{_DIM}{arcana.SIGIL}{_RESET}  {_DIM}{num:>4}{_RESET}  "
+                f"{_BOLD}{_MAGENTA}{card:<18}{_RESET}{_DIM}{action:<18}{_RESET}"
+                f"{_DIM}→{_RESET} {col}{status}{_RESET}"
+            )
 
         server = mount(build_application, name="kassi", upstream=upstream())
-        print(f"{arcana.SIGIL}  Granite is driving. {arcana.TAGLINE}\n")
-        kwargs: dict = {"prompt": task}
+        print(
+            f"\n{_BOLD}{_MAGENTA}{arcana.SIGIL}  Granite is driving.{_RESET} {_CYAN}{arcana.TAGLINE}{_RESET}\n"
+        )
+        kwargs: dict = {"prompt": task, "prelude": ("select_mode", inputs), "on_step": on_step}
         if model:
             kwargs["model"] = model
         transcript = asyncio.run(drive_granite(server, **kwargs))
         state = transcript.get("final_state") or {}
         report = state.get("report") if isinstance(state, dict) else None
         verdict = (report or {}).get("verdict") if isinstance(report, dict) else None
+        steps = len(transcript.get("turns", []))
         print(
-            f"\n{arcana.SIGIL}  stopped on: {transcript.get('stopped_on')} ({len(transcript.get('turns', []))} steps)"
+            f"\n{_DIM}{arcana.SIGIL}  stopped on {transcript.get('stopped_on')}, {steps} phases driven by Granite{_RESET}"
         )
         if verdict:
-            print(f"{arcana.SIGIL}  verdict: {verdict}")
+            print(f"{arcana.SIGIL}  {_BOLD}verdict:{_RESET} {_outcome_color(verdict)}{verdict}{_RESET}")
 
     @cli.command("warm-k6")
     def warm_k6() -> None:
