@@ -2,10 +2,13 @@
 
     KASSI_LLM=anthropic envchain ai uv run python scripts/verify_petclinic.py
 
-Nothing is canned. It starts the real FastAPI app (which ships access logs to
-Splunk's HEC), runs REAL k6 through the k6 MCP server against the new POST /api/visits
-endpoint, and reads the server-side regression back from Splunk via the four correlation
-queries. Prereqs: local Splunk seeded by scripts/seed_splunk.py and .env set.
+Nothing is canned. It drives kassi in diff mode: a throwaway git repo holds a healthy
+petclinic baseline plus a second commit that adds POST /api/visits, so kassi picks the
+changed endpoint from the diff. It starts the real FastAPI app (which ships access logs
+to Splunk's HEC), runs REAL k6 through the k6 MCP server against that endpoint, and reads
+the server-side regression back from Splunk via the four correlation queries plus the
+predict + anomalydetection scan. Prereqs: local Splunk seeded by scripts/seed_splunk.py
+and .env set.
 """
 
 from __future__ import annotations
@@ -13,7 +16,9 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import shutil
 import subprocess
+import tempfile
 import time
 import urllib.request
 from pathlib import Path
@@ -41,6 +46,34 @@ def _wait_for_app(timeout: float = 30.0) -> bool:
         except Exception:
             time.sleep(0.5)
     return False
+
+
+def _build_diff_repo() -> Path:
+    """A throwaway git repo: commit 1 is the healthy baseline, commit 2 adds
+    POST /api/visits. `git diff HEAD~1..HEAD` then shows only the new endpoint, which is
+    what kassi extracts in diff mode. The full app still serves the load."""
+    src = (APP_DIR / "app.py").read_text()
+    marker = '@app.post("/api/visits")'
+    before, rest = src.split(marker, 1)
+    _, main_block = rest.split("def main(", 1)
+    baseline = before.rstrip() + "\n\n\ndef main(" + main_block
+
+    repo = Path(tempfile.mkdtemp(prefix="kassi_petclinic_diff_"))
+    (repo / "openapi.json").write_text((APP_DIR / "openapi.json").read_text())
+
+    def git(*args: str) -> None:
+        subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True)
+
+    git("init", "-q")
+    git("config", "user.email", "demo@kassi.local")
+    git("config", "user.name", "kassi demo")
+    (repo / "app.py").write_text(baseline)
+    git("add", "-A")
+    git("commit", "-q", "-m", "petclinic: healthy baseline")
+    (repo / "app.py").write_text(src)
+    git("add", "-A")
+    git("commit", "-q", "-m", "petclinic: add POST /api/visits")
+    return repo
 
 
 async def main() -> None:
@@ -74,7 +107,9 @@ async def main() -> None:
         app.terminate()
         print("petclinic app did not come up. Aborting.")
         return
+    diff_repo = _build_diff_repo()
     print(f"target app:  petclinic (flawed POST /api/visits) at {APP_URL}")
+    print(f"diff mode:   {diff_repo} (HEAD~1..HEAD adds POST /api/visits)")
     print(f"llm backend: {os.environ.get('KASSI_LLM', 'ollama')}; k6 + splunk run live")
 
     upstream = UpstreamManager({"k6": k6_upstream_config(), "splunk": splunk_upstream_config()})
@@ -85,8 +120,8 @@ async def main() -> None:
         _, _, state = await application.arun(
             halt_after=["report"],
             inputs={
-                "repo_path": str(APP_DIR),
-                "intent": "load test recording a visit and listing owners",
+                "repo_path": str(diff_repo),
+                "ref": "HEAD~1",
                 "target_base_url": APP_URL,
                 "splunk_index": "web",
             },
@@ -95,6 +130,7 @@ async def main() -> None:
         await upstream.aclose()
         reset_upstream(token)
         app.terminate()
+        shutil.rmtree(diff_repo, ignore_errors=True)
 
     report = state["report"]
     corr = report.get("correlation") or {}
@@ -115,6 +151,13 @@ async def main() -> None:
         print(f"root cause:     {te['error_message']}  ({te['count']}x)")
     if onset:
         print(f"onset:          first errors at {onset.get('time')}")
+    anom = report.get("anomalies") or {}
+    if anom:
+        print(
+            f"anomaly scan:   predict + anomalydetection over {anom.get('buckets_analyzed', 0)} buckets, "
+            f"{anom.get('forecast_breaches', 0)} band breach(es), "
+            f"{anom.get('anomalous_buckets', 0)} anomalous bucket(s)"
+        )
     print("\nby-path breakdown:")
     for row in corr.get("queries", {}).get("by_path", {}).get("rows", []):
         print("   ", json.dumps(row))
