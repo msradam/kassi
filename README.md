@@ -98,7 +98,18 @@ kassi render               # print the state machine
 kassi serve                # mount as an MCP server over stdio (both upstreams wired in)
 ```
 
-Drive it from Claude Code by registering the server:
+Drive it locally with Granite, no cloud agent. `kassi pilot` lets the local Granite model
+drive the FSM step by step: it reads the reachable actions and calls `step` for each phase
+itself, doing the per-phase work as it goes (the `screen` phase hands off to Granite Guardian).
+Driver, writer, and auditor are all the local model:
+
+```bash
+kassi pilot --intent "load test the pet listing endpoint" \
+  --repo-path examples/petstore --target-base-url http://localhost:8000 --splunk-index web
+# or diff mode: kassi pilot --repo-path /path/to/repo --ref HEAD~1 --splunk-index web
+```
+
+Or drive it from Claude Code (or any MCP client) by registering the server:
 
 ```bash
 claude mcp add --scope=user --transport=stdio kassi -- kassi serve

@@ -19,10 +19,12 @@ from typing import Protocol
 import httpx
 
 DEFAULT_MODEL = "granite4.1:8b"
-# Granite 4.1's hybrid Mamba-2/transformer keeps the long-context KV cache cheap, so we run the
-# model's full 131K window by default (grounding documents are never silently truncated). Tune
-# down with KASSI_NUM_CTX if the host is memory-constrained.
-DEFAULT_NUM_CTX = int(os.environ.get("KASSI_NUM_CTX", "131072"))
+# Context window for every Granite call. 32K comfortably holds the largest prompt kassi builds
+# (the scaffold script plus grounding documents) with room to spare, so nothing is truncated, while
+# staying small enough that the KV cache does not thrash a 16GB host. Keep this consistent across
+# the driver and the per-phase worker: a mismatched num_ctx makes Ollama reload the model between
+# calls, which on the M4 timed the worker out. Raise with KASSI_NUM_CTX where memory allows.
+DEFAULT_NUM_CTX = int(os.environ.get("KASSI_NUM_CTX", "32768"))
 DEFAULT_ANTHROPIC_MODEL = "claude-haiku-4-5"
 ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages"
 ANTHROPIC_VERSION = "2023-06-01"

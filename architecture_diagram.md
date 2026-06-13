@@ -8,8 +8,8 @@ server-side telemetry in Splunk.
 
 ```mermaid
 flowchart TB
-    subgraph Driver["AI agent (driver)"]
-        A["Claude Code / any MCP client<br/>sees ONE tool: step(action, inputs)"]
+    subgraph Driver["AI agent (driver) — local Granite, or any MCP client"]
+        A["local Granite (kassi pilot), Claude Code, or any MCP client<br/>drives step by step; sees ONE tool: step(action, inputs)"]
     end
 
     subgraph kassi["kassi: Burr FSM served over MCP by Theodosia"]
@@ -71,7 +71,7 @@ flowchart TB
 ## System diagram (ASCII)
 
 ```
-  AI agent (driver): Claude Code / Cursor / any MCP client
+  AI agent (driver): local Granite (kassi pilot) / Claude Code / any MCP client
   sees exactly ONE tool ─────────────────────────────────────────┐
                                                    step(action, inputs)
                                                                   │
@@ -136,10 +136,13 @@ it tested, and the dashboard can render how the verdict was reached, step by ste
 
 Three layers of AI, kept deliberately narrow:
 
-1. **The driving agent** (Claude Code or any MCP client) decides which workflow step to
-   take next. It sees only kassi's single `step` tool. kassi's state machine refuses any
-   illegal step and returns the legal next actions, so the agent's autonomy is bounded by
-   construction and fully audited.
+1. **The driving agent** decides which workflow step to take next. It sees only kassi's single
+   `step` tool, and kassi's state machine refuses any illegal step and returns the legal next
+   actions, so the agent's autonomy is bounded by construction and fully audited. The driver is
+   pluggable: Claude Code or any MCP client, or a **local Granite model** via `kassi pilot`
+   (`pilot.py`), which reads the reachable actions and calls `step` for each phase itself. With
+   the Granite driver, driver, writer, and auditor are all the same local model family, so the
+   whole loop runs on one box with no cloud brain.
 2. **A writer model** (a local IBM Granite 4.1 model by default, or Claude) authors the k6
    script on top of the deterministic scaffold, writes a cited analysis grounded on the run's
    evidence, proposes the remediation diff, and narrates the run. It never writes SPL; pure
