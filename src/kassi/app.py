@@ -40,7 +40,7 @@ from pathlib import Path
 from typing import Any
 
 import structlog
-from burr.core import ApplicationBuilder, Condition, State, action
+from burr.core import ApplicationBuilder, ApplicationContext, Condition, State, action
 from theodosia import call_upstream, mount, safe_upstream, tracker
 
 from kassi import analysis, arcana, codegen, guardian, parse, publish, remediate
@@ -53,9 +53,12 @@ from kassi.upstream import K6_SERVER, SPLUNK_SERVER, splunk_configured, upstream
 log = structlog.get_logger()
 
 
-def _record(calls: list[dict[str, str]], server: str, tool: str, status: str) -> list[dict[str, str]]:
-    """Append one upstream tool call to the provenance log (immutably)."""
-    return [*calls, {"server": server, "tool": tool, "status": status}]
+def _record(
+    calls: list[dict[str, str]], phase: str, server: str, tool: str, status: str
+) -> list[dict[str, str]]:
+    """Append one upstream tool call to the provenance log (immutably), tagged with the phase
+    that made it so the run's step trace can attribute each call to its state-machine phase."""
+    return [*calls, {"phase": phase, "server": server, "tool": tool, "status": status}]
 
 
 def _load_profile(plan: dict | None) -> tuple[int, str]:
@@ -172,13 +175,13 @@ async def doc_lookup(state: State) -> State:
     sections = await safe_upstream(
         "k6_docs", K6_SERVER, "list_sections", {"root_slug": "using-k6", "depth": 2}, expect="dict"
     )
-    calls = _record(calls, K6_SERVER, "list_sections", sections.status)
+    calls = _record(calls, "doc_lookup", K6_SERVER, "list_sections", sections.status)
     if sections.usable:
         for slug in parse.select_doc_slugs(sections.data):
             doc = await safe_upstream(
                 "k6_docs", K6_SERVER, "get_documentation", {"slug": slug}, expect="dict"
             )
-            calls = _record(calls, K6_SERVER, "get_documentation", doc.status)
+            calls = _record(calls, "doc_lookup", K6_SERVER, "get_documentation", doc.status)
             if doc.usable:
                 refs.append(parse.parse_documentation(slug, doc.data))
     log.info("doc_lookup_done", refs=len(refs))
@@ -218,7 +221,9 @@ async def generate_script(state: State) -> State:
     calls = state["mcp_calls"]
 
     guidance = await fetch_k6_generation_guidance(description)
-    calls = _record(calls, K6_SERVER, "generate_script(prompt)", "ok" if guidance else "error")
+    calls = _record(
+        calls, "generate_script", K6_SERVER, "generate_script(prompt)", "ok" if guidance else "error"
+    )
     if guidance:
         system = guidance + "\n\nReturn ONLY the k6 script. No prose, no markdown fences."
     else:
@@ -276,10 +281,10 @@ async def validate_script(state: State) -> State:
         return state.update(
             validation_error=f"k6 MCP unavailable: {exc}",
             stage="failed_validation",
-            mcp_calls=_record(calls, K6_SERVER, "validate_script", "error"),
+            mcp_calls=_record(calls, "validate_script", K6_SERVER, "validate_script", "error"),
         )
 
-    calls = _record(calls, K6_SERVER, "validate_script", "ok")
+    calls = _record(calls, "validate_script", K6_SERVER, "validate_script", "ok")
     err = parse.parse_validation(payload)
     if err is None:
         return state.update(validation_error=None, stage="validated", mcp_calls=calls)
@@ -338,21 +343,21 @@ async def run_test(state: State) -> State:
 
     try:
         payload = await _run(script)
-        calls = _record(calls, K6_SERVER, "run_script", "ok")
+        calls = _record(calls, "run_test", K6_SERVER, "run_script", "ok")
     except TimeoutError:
         log.warning("run_test_timeout", timeout_s=round(timeout))
-        calls = _record(calls, K6_SERVER, "run_script", "timeout")
+        calls = _record(calls, "run_test", K6_SERVER, "run_script", "timeout")
         if scaffold and script != scaffold:
             try:
                 payload = await _run(scaffold)
-                calls = _record(calls, K6_SERVER, "run_script", "ok")
+                calls = _record(calls, "run_test", K6_SERVER, "run_script", "ok")
                 log.info("run_test_scaffold_fallback")
             except Exception as exc:
                 return state.update(
                     run_result=None,
                     stage="failed",
                     error=f"k6 run timed out; scaffold fallback failed: {exc}",
-                    mcp_calls=_record(calls, K6_SERVER, "run_script", "error"),
+                    mcp_calls=_record(calls, "run_test", K6_SERVER, "run_script", "error"),
                 )
         else:
             return state.update(
@@ -366,7 +371,7 @@ async def run_test(state: State) -> State:
             run_result=None,
             stage="failed",
             error=f"k6 MCP run failed: {exc}",
-            mcp_calls=_record(calls, K6_SERVER, "run_script", "error"),
+            mcp_calls=_record(calls, "run_test", K6_SERVER, "run_script", "error"),
         )
 
     ended = time.time()
@@ -394,11 +399,11 @@ async def splunk_preflight(state: State) -> State:
     calls = state["mcp_calls"]
 
     info = await safe_upstream("splunk_info", SPLUNK_SERVER, "splunk_get_info", {}, expect="dict")
-    calls = _record(calls, SPLUNK_SERVER, "splunk_get_info", info.status)
+    calls = _record(calls, "splunk_preflight", SPLUNK_SERVER, "splunk_get_info", info.status)
     idx = await safe_upstream(
         "splunk_index_info", SPLUNK_SERVER, "splunk_get_index_info", {"index_name": index}, expect="dict"
     )
-    calls = _record(calls, SPLUNK_SERVER, "splunk_get_index_info", idx.status)
+    calls = _record(calls, "splunk_preflight", SPLUNK_SERVER, "splunk_get_index_info", idx.status)
     meta = await safe_upstream(
         "splunk_metadata",
         SPLUNK_SERVER,
@@ -406,7 +411,7 @@ async def splunk_preflight(state: State) -> State:
         {"type": "sourcetypes", "index": index, "earliest_time": str(earliest), "latest_time": str(latest)},
         expect="dict",
     )
-    calls = _record(calls, SPLUNK_SERVER, "splunk_get_metadata", meta.status)
+    calls = _record(calls, "splunk_preflight", SPLUNK_SERVER, "splunk_get_metadata", meta.status)
 
     facts = parse.parse_index_facts(index, idx.data if idx.usable else None)
     preflight = {
@@ -443,7 +448,7 @@ async def correlate(state: State, splunk_spl: str = "") -> State:
         result = await safe_upstream(
             "splunk_telemetry", SPLUNK_SERVER, "splunk_run_query", {"query": spl}, expect="dict"
         )
-        calls = _record(calls, SPLUNK_SERVER, "splunk_run_query", result.status)
+        calls = _record(calls, "correlate", SPLUNK_SERVER, "splunk_run_query", result.status)
         rows = parse.summarize_correlation(result.data)
         out[name] = {"spl": spl, "rows": rows}
         rows_by_query[name] = rows
@@ -481,7 +486,7 @@ async def detect_anomalies(state: State) -> State:
         result = await safe_upstream(
             "splunk_ml", SPLUNK_SERVER, "splunk_run_query", {"query": spl}, expect="dict"
         )
-        calls = _record(calls, SPLUNK_SERVER, "splunk_run_query", result.status)
+        calls = _record(calls, "detect_anomalies", SPLUNK_SERVER, "splunk_run_query", result.status)
         out[name] = {"spl": spl, "rows": parse.summarize_correlation(result.data)}
         rows_by_query[name] = out[name]["rows"]
         available = available or result.usable
@@ -603,6 +608,7 @@ async def report(state: State) -> State:
     verdict = state["verdict"] or _verdict(state)
     narration = await _narrate(state, verdict)
     summary = {
+        "session": _session(),
         "mode": state["mode"],
         "endpoints_tested": state["endpoints"],
         "plan": state["plan"],
@@ -612,6 +618,7 @@ async def report(state: State) -> State:
         "splunk_enabled": state["splunk_enabled"],
         "correlation": state["correlation"],
         "anomalies": state["anomalies"],
+        "steps": _trace(state, verdict),
         "mcp_provenance": {
             "tool_calls": state["mcp_calls"],
             "k6_doc_refs": state["doc_refs"],
@@ -628,6 +635,83 @@ async def report(state: State) -> State:
         summary["published"] = await asyncio.to_thread(publish.publish_run, summary)
         log.info("report_published", ok=summary["published"])
     return state.update(report=summary, stage="done")
+
+
+def _session() -> dict[str, Any]:
+    """Burr's own run identifiers for the current execution, so the run and its step trace land
+    in Splunk under the same `app_id` that `kassi sessions show` and Burr's tracker use, rather
+    than a kassi-invented id."""
+    ctx = ApplicationContext.get()
+    if ctx is None:
+        return {}
+    return {
+        "app_id": getattr(ctx, "app_id", None),
+        "partition_key": getattr(ctx, "partition_key", None),
+        "sequence_id": getattr(ctx, "sequence_id", None),
+    }
+
+
+_TERMINAL_PHASES = ("read_diff", "parse_intent", "extract_endpoints")
+
+
+def _trace(state: State, verdict: str) -> list[dict[str, Any]]:
+    """The agent's walk through the state machine as an ordered list of one record per executed
+    phase: its Major Arcana card, an outcome status, and the upstream tool calls it made (from the
+    phase-tagged provenance). This is what makes the FSM run itself observable in Splunk, keyed to
+    Burr's `app_id`."""
+    by_phase: dict[str, list[dict]] = {}
+    for c in state["mcp_calls"] or []:
+        by_phase.setdefault(c.get("phase", ""), []).append(c)
+
+    phases = ["select_mode", "read_diff" if state["mode"] == "diff" else "parse_intent"]
+    if state["mode"] == "diff" and state["diff_text"]:
+        phases.append("extract_endpoints")
+    phases += ["doc_lookup", "scaffold", "generate_script", "validate_script"]
+    if state["fix_attempts"]:
+        phases.append("fix_script")
+    if state["run_result"] is not None:
+        phases.append("run_test")
+        if state["splunk_enabled"]:
+            phases += ["splunk_preflight", "correlate", "detect_anomalies"]
+    phases += ["analyze"]
+    if (state["groundedness"] or {}).get("available"):
+        phases.append("screen")
+    phases.append("report")
+
+    steps = []
+    for seq, phase in enumerate(phases):
+        ptools = by_phase.get(phase, [])
+        num, card, _ = arcana.ARCANA.get(phase, ("", phase, ""))
+        steps.append(
+            {
+                "seq": seq,
+                "phase": phase,
+                "card_num": num,
+                "card": card,
+                "status": _step_status(state, phase, ptools, verdict),
+                "tool_calls": len(ptools),
+                "tools": [f"{t['server']}.{t['tool']}={t['status']}" for t in ptools],
+            }
+        )
+    return steps
+
+
+def _step_status(state: State, phase: str, ptools: list[dict], verdict: str) -> str:
+    statuses = {t["status"] for t in ptools}
+    if "timeout" in statuses:
+        return "timeout (scaffold fallback)"
+    if "error" in statuses:
+        return "degraded"
+    if state["fix_attempts"] and phase in ("validate_script", "fix_script"):
+        return f"repaired x{state['fix_attempts']}"
+    if phase == "screen":
+        return "grounded" if (state["groundedness"] or {}).get("grounded") else "ungrounded"
+    if phase == "report":
+        v = (verdict or "").lower()
+        if "regression" in v:
+            return "regression"
+        return "failed" if v.startswith(("failed", "no run")) else "ok"
+    return "ok"
 
 
 def _verdict(state: State) -> str:

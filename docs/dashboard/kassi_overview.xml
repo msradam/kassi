@@ -1,6 +1,6 @@
 <dashboard theme="dark" version="1.1" stylesheet="kassi.css">
   <label>kassi: change impact, read from Splunk</label>
-  <description>Client-side k6 metrics joined to the target's server-side telemetry over the exact test window. Each run is published to index=kassi_runs by kassi's report phase.</description>
+  <description>Client-side k6 metrics joined to the target's server-side telemetry over the exact test window, plus the agent's own state-machine walk (one event per Burr phase, keyed by app_id). Each run is published to index=kassi_runs by kassi's report phase.</description>
 
   <row>
     <panel>
@@ -44,6 +44,40 @@
         <option name="useColors">0</option>
         <option name="height">90</option>
       </single>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>the agent's walk — Burr state machine, latest run</title>
+      <table>
+        <search>
+          <query>index=kassi_runs sourcetype=kassi:step [search index=kassi_runs sourcetype=kassi:run | head 1 | return app_id] | sort seq | eval Card=card_num."  ".card | rename phase AS Phase, status AS Outcome, tool_calls AS "Calls", tools AS "Tool calls" | table seq Card Phase Outcome "Calls" "Tool calls"</query>
+          <earliest>-30d</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="drilldown">none</option>
+        <option name="count">20</option>
+        <format type="color" field="Outcome">
+          <colorPalette type="map">{"ok":#53a051,"grounded":#53a051,"regression":#f456a1,"ungrounded":#f456a1,"degraded":#f8be34,"timeout (scaffold fallback)":#f8be34}</colorPalette>
+        </format>
+      </table>
+    </panel>
+    <panel>
+      <title>step outcomes across runs</title>
+      <chart>
+        <search>
+          <query>index=kassi_runs sourcetype=kassi:step | stats count BY status | sort - count</query>
+          <earliest>-30d</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="charting.chart">bar</option>
+        <option name="charting.backgroundColor">transparent</option>
+        <option name="charting.fieldColors">{"count":0xf456a1}</option>
+        <option name="charting.legend.placement">none</option>
+        <option name="charting.axisTitleX.text">steps</option>
+        <option name="charting.axisTitleY.text">outcome</option>
+      </chart>
     </panel>
   </row>
 

@@ -132,6 +132,17 @@ async def test_full_run_intent_mode():
     assert isinstance(report["analysis"], str) and report["analysis"].strip()
     assert report["groundedness"] == {"available": False, "grounded": None}
 
+    # the run is keyed by Burr's own app_id (not a kassi-minted id), and the state-machine walk is
+    # captured as an ordered step trace for the Splunk dashboard.
+    assert report["session"]["app_id"]
+    steps = report["steps"]
+    phases = [s["phase"] for s in steps]
+    assert phases[0] == "select_mode" and phases[-1] == "report"
+    assert phases[-2] == "analyze"  # screen is skipped here (Guardian disabled)
+    assert [s["seq"] for s in steps] == list(range(len(steps)))
+    run_test_step = next(s for s in steps if s["phase"] == "run_test")
+    assert "k6.run_script=ok" in run_test_step["tools"]
+
     # scaffold built a deterministic load plan; the model authored the script on top of it.
     assert report["plan"]["test_taxonomy"] == "load"
     validated = fake.calls_to("k6", "validate_script")
@@ -287,6 +298,47 @@ async def test_screen_skips_when_guardian_disabled(monkeypatch):
     result = await kassi_app.screen(State({"analysis": "x", "analysis_context": "y"}))
     assert result["stage"] == "screened"
     assert result["groundedness"] == {"available": False, "grounded": None}
+
+
+def test_publish_builds_run_and_step_events_keyed_by_app_id():
+    """The run event and the per-phase step events both carry Burr's app_id, so the dashboard
+    correlates the verdict with the agent's state-machine walk."""
+    from kassi import publish
+
+    report = {
+        "session": {"app_id": "abc123", "partition_key": None, "sequence_id": 14},
+        "verdict": "server-side regression: /api/visits ... cause: database is locked",
+        "recommendation": "enable WAL",
+        "groundedness": {"grounded": True},
+        "steps": [
+            {
+                "seq": 0,
+                "phase": "select_mode",
+                "card": "The Fool",
+                "card_num": "0",
+                "status": "ok",
+                "tool_calls": 0,
+                "tools": [],
+            },
+            {
+                "seq": 1,
+                "phase": "run_test",
+                "card": "The Tower",
+                "card_num": "XVI",
+                "status": "ok",
+                "tool_calls": 1,
+                "tools": ["k6.run_script=ok"],
+            },
+        ],
+    }
+    run_event = publish.build_event(report)
+    assert run_event["app_id"] == "abc123"
+    assert run_event["steps_total"] == 2
+
+    steps = publish.build_step_events(report)
+    assert [s["app_id"] for s in steps] == ["abc123", "abc123"]
+    assert [s["phase"] for s in steps] == ["select_mode", "run_test"]
+    assert steps[1]["tools"] == ["k6.run_script=ok"]
 
 
 def test_remediate_applies_validates_and_diffs():
