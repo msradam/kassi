@@ -1,8 +1,8 @@
-# kassi: the AI agent that tells your code's fortune
+# kassi: the AI agent that divines the outage before you ship it
 
-> It foresees what your next change will break in production, reads the proof from Splunk, and
-> warns you before it comes true. Cassandra foresaw disaster and was never believed; kassi's
-> prophecy comes with proof.
+> It reads the omens in your telemetry to divine what your next change will break, then proves
+> it in Splunk, before production does. Cassandra foresaw disaster and was never believed;
+> kassi's prophecy comes with proof.
 
 **Elevator pitch.** Roughly 80% of production outages are self-inflicted, they trace back to a
 change. The warning is usually there; it just isn't believed, because a change's real impact
