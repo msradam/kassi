@@ -116,7 +116,8 @@ scripted.
    `POST /api/visits`, so kassi tests exactly the changed endpoint) with **real k6** through
    the k6 MCP server against the running app (~25 VUs, 25s);
 3. reads the regression back from Splunk via the four `correlate` queries, then confirms the
-   saturation onset with Splunk's own `predict` + `anomalydetection`.
+   saturation onset with the AI Toolkit's `StateSpaceForecast` (core `predict` as fallback)
+   plus `anomalydetection`.
 
 ```bash
 KASSI_LLM=anthropic envchain ai uv run python scripts/verify_petclinic.py

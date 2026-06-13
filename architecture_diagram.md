@@ -24,7 +24,7 @@ flowchart TB
         VS --> RT["run_test"]
         RT --> PF["splunk_preflight"]
         PF --> CO["correlate"]
-        CO --> DA["detect_anomalies<br/>(Splunk predict + anomalydetection)"]
+        CO --> DA["detect_anomalies<br/>(AI Toolkit StateSpaceForecast + anomalydetection)"]
         DA --> RP["report<br/>(model narration)"]
         LEDGER[("immutable<br/>hash-chained ledger<br/>steps + refusals")]
     end
@@ -35,7 +35,7 @@ flowchart TB
 
     subgraph Upstreams["Upstream MCP servers (hidden from the driver)"]
         K6["Grafana k6 MCP server<br/>list_sections · get_documentation<br/>generate_script prompt · best_practices<br/>validate_script · run_script"]
-        SPL["Splunk MCP Server<br/>get_info · get_index_info · get_metadata<br/>splunk_run_query (SPL + predict / anomalydetection)"]
+        SPL["Splunk MCP Server<br/>get_info · get_index_info · get_metadata<br/>splunk_run_query (SPL + StateSpaceForecast / anomalydetection)"]
     end
 
     subgraph Splunk["Splunk Enterprise"]
@@ -83,9 +83,9 @@ flowchart TB
      ▼                 ▼                           ▼
  ┌──────────────┐ ┌────────────────────┐ ┌────────────────────────────────┐
  │ model        │ │ Grafana k6 MCP     │ │ Splunk MCP Server  (Splunk AI) │
- │ Ollama /     │ │ generate_script    │ │ splunk_run_query (SPL)         │
- │ Claude Haiku │ │ prompt · docs ·    │ │ get_info · get_index_info ·    │
- │ authors the  │ │ best_practices ·   │ │ get_metadata · predict ·       │
+ │ Ollama /     │ │ generate_script    │ │ splunk_run_query · get_info ·  │
+ │ Claude Haiku │ │ prompt · docs ·    │ │ get_index_info · get_metadata ·│
+ │ authors the  │ │ best_practices ·   │ │ StateSpaceForecast ·           │
  │ script,      │ │ validate · run     │ │ anomalydetection (token-auth)  │
  │ narrates run │ └─────────┬──────────┘ └───────────────┬────────────────┘
  └──────────────┘           │ generated k6 load          │ windowed SPL
@@ -113,9 +113,10 @@ official **Splunk MCP Server** `splunk_run_query` tool through Theodosia's
 `call_upstream`. The Splunk MCP Server runs the SPL against Splunk Enterprise and returns
 the server-side rollup, which kassi pairs with the client-side k6 metrics in the final
 report. The `detect_anomalies` step then runs Splunk's own ML over the same window through
-the same tool: `predict` forecasts the latency band and `anomalydetection` flags
-statistically outlying buckets, so the saturation onset is found by Splunk, not by a fixed
-threshold in kassi. Connection is the official `mcp-remote` stdio bridge to the server's
+the same tool: the AI Toolkit's `StateSpaceForecast` forecasts the latency band (core
+`predict` as a fallback when the toolkit is absent) and `anomalydetection` flags
+statistically outlying buckets, so the saturation onset is found by Splunk's ML, not by a
+fixed threshold in kassi. Connection is the official `mcp-remote` stdio bridge to the server's
 streamable-HTTP endpoint, authenticated with an encrypted Bearer token. Every Splunk and
 k6 tool call is recorded to the report's `mcp_provenance` block.
 
@@ -148,8 +149,9 @@ Two layers of AI, kept deliberately narrow:
    metadata before correlation.
 7. `correlate` calls the **Splunk MCP Server** with windowed SPL to read that server-side
    telemetry back.
-8. `detect_anomalies` calls the **Splunk MCP Server** again with `predict` and
-   `anomalydetection` over the same window, so Splunk's own ML locates the anomaly.
+8. `detect_anomalies` calls the **Splunk MCP Server** again with the AI Toolkit's
+   `StateSpaceForecast` (core `predict` as a fallback) and `anomalydetection` over the same
+   window, so Splunk's own ML locates the anomaly.
 9. `report` has the model narrate the run, then emits a combined client + server verdict
    to the driver, including the `mcp_provenance` record of every upstream tool call.
 10. Every transition and every refusal is written to Theodosia's immutable, hash-chained

@@ -200,10 +200,12 @@ stateDiagram-v2
   regressed: 59% 5xx, p95 318ms vs 2ms baseline, cause 'database is locked'", which the k6
   summary alone never shows. Override the rollup per run with `splunk_spl`.
 - `detect_anomalies` runs Splunk's own ML over the same window through the same
-  `splunk_run_query` tool: `predict` forecasts the latency band and `anomalydetection`
-  flags statistically outlying buckets. The saturation onset is found by Splunk, not by a
-  fixed threshold in kassi, and the forecast band and anomalous buckets fold into the
-  verdict. Non-blocking, like the other Splunk phases.
+  `splunk_run_query` tool: the **AI Toolkit's `StateSpaceForecast`** algorithm forecasts the
+  latency band (falling back to the core `predict` command when the toolkit's Python for
+  Scientific Computing add-on is absent) and `anomalydetection` flags statistically outlying
+  buckets. The saturation onset is found by Splunk's ML, not by a fixed threshold in kassi,
+  and the forecast band and anomalous buckets fold into the verdict. Non-blocking, like the
+  other Splunk phases.
 - `report` has the model narrate the run as a tarot reading, one line per phase from
   the recorded facts, falling back to the static omens when the model is absent. Every
   upstream tool call is logged to `mcp_provenance`. The work-phases stay deterministic;
@@ -240,8 +242,9 @@ drives the whole FSM with **nothing canned**, in **diff mode**: a throwaway git 
 healthy petclinic baseline plus a second commit that adds `POST /api/visits`, so kassi picks
 the changed endpoint from the diff, runs **real k6** through the k6 MCP server against it,
 reads the server-side regression back from Splunk through the four `correlate` queries, and
-runs Splunk's own `predict` + `anomalydetection` over the same window in `detect_anomalies`,
-all on the official `splunk_run_query` tool.
+runs the AI Toolkit's `StateSpaceForecast` (with `predict` as the fallback) plus
+`anomalydetection` over the same window in `detect_anomalies`, all on the official
+`splunk_run_query` tool.
 
 ```console
 $ KASSI_LLM=anthropic envchain ai uv run python scripts/verify_petclinic.py
@@ -256,7 +259,7 @@ endpoints:       POST /api/visits
 k6 client-side:  2937 reqs, p95 318.44 ms, 59.4% failed
 worst endpoint:  /api/visits  59.4% errs  p95 318.44 ms
 root cause:      database is locked  (1797x)
-anomaly scan:    predict + anomalydetection over 13 buckets, 1 anomalous bucket
+anomaly scan:    splunk StateSpaceForecast + anomalydetection over 13 buckets, 1 anomalous bucket
 mcp tool calls:  k6.{list_sections, get_documentation x4, generate_script(prompt),
                      validate_script x2, run_script}
                  splunk.{get_info, get_index_info, get_metadata, run_query x6}
@@ -265,7 +268,7 @@ the reading:
     🂠  The Magician: Script authored, repaired once, validated successfully.
     🂠  The Tower: 2937 requests executed; p95 318.44 ms, 59.4% failure rate.
     🂠  The Lovers: /api/visits worst at 59.4% errors, database locked 1797 times.
-    🂠  The Star: predict + anomalydetection flagged the anomalous bucket on /api/visits.
+    🂠  The Star: StateSpaceForecast forecast p95 ~312ms; anomalydetection flagged the anomalous bucket.
     🂠  Judgement: Server regression confirmed: /api/visits, database lock root cause.
 ```
 
@@ -275,7 +278,8 @@ the new endpoint), the model authored a script that failed k6 validation, the `f
 loop repaired it from the real k6 error and re-validated, real k6 drove 2937 requests, the
 four `correlate` queries on the official Splunk MCP Server isolated the new endpoint
 (`/api/visits` at 59.4% 5xx) and named the root cause k6 cannot see ("database is locked"),
-and Splunk's own `predict` + `anomalydetection` flagged the saturation bucket statistically.
+and the AI Toolkit's `StateSpaceForecast` forecast the latency band while `anomalydetection`
+flagged the anomalous bucket statistically.
 Every upstream call is on the hash-chained ledger and in `mcp_provenance`. See
 [`docs/SPLUNK_SETUP.md`](docs/SPLUNK_SETUP.md) for the full setup.
 

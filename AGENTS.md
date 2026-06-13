@@ -33,7 +33,7 @@ src/kassi/
   app.py             THE FSM: async @action functions + build_application() + mount();
                      doc_lookup, scaffold, generate_script, fix_script (validation loop),
                      splunk_preflight, correlate (4 queries),
-                     detect_anomalies (predict + anomalydetection), report-narration
+                     detect_anomalies (StateSpaceForecast/predict + anomalydetection), report-narration
   cli.py             `kassi` console command (Theodosia build_cli); loads .env; warm-k6
   upstream.py        k6 + splunk upstream MCP configs; splunk_configured()
   k6gen.py           fetch_k6_generation_guidance(): k6 MCP generate_script prompt + best_practices
@@ -159,7 +159,8 @@ and classifies the result). The driving agent never sees these servers.
   Splunk tools: `splunk_get_info` + `splunk_get_index_info` + `splunk_get_metadata`
   (splunk_preflight) and `splunk_run_query` x6 (correlate runs a rollup, timeline,
   by-path, and root-cause query, then `summarize_findings` synthesizes the verdict;
-  detect_anomalies adds `predict` + `anomalydetection` over the same window). The
+  detect_anomalies adds the AI Toolkit's `StateSpaceForecast`, or core `predict` as a
+  fallback, plus `anomalydetection` over the same window). The
   official server is reached
   through `npx mcp-remote <endpoint> --header "Authorization: Bearer <token>"`; this is
   the documented official client transport. `KASSI_SPLUNK_INSECURE=1` adds
