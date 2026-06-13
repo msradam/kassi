@@ -1,8 +1,9 @@
 # kassi demo for the Splunk Agentic Ops Hackathon.
-# Record with:  KASSI_LLM=anthropic envchain ai vhs docs/demo.tape
-# (envchain supplies ANTHROPIC_API_KEY; the recorded shell falls back to a
-#  default plan if no LLM backend is reachable.) Needs a local Splunk per
-#  docs/SPLUNK_SETUP.md plus the .env endpoint + token.
+# Record with:  vhs docs/demo.tape
+# Uses the local Granite 4.1 model on the Mini (per .env: KASSI_LLM=ollama,
+# KASSI_MODEL=granite4.1:8b, OLLAMA_HOST). Needs a local Splunk per
+# docs/SPLUNK_SETUP.md plus the .env endpoint + token. Granite on the M4 is slower
+# than a hosted model, so the run beat sleeps ~135s; bump it if the run is clipped.
 
 Output docs/demo.gif
 
@@ -17,7 +18,6 @@ Set TypingSpeed 28ms
 
 Hide
 Type "cd /Users/amsrahman/kassi" Enter
-Type "export KASSI_LLM=anthropic KASSI_MODEL=claude-haiku-4-5" Enter
 Type "clear" Enter
 Show
 
@@ -50,7 +50,7 @@ Enter
 Sleep 800ms
 Type "./scripts/divine_petclinic.sh"
 Enter
-Sleep 55s
+Sleep 135s
 
 Type "# one agent, 18 tool calls across two MCP servers -- the new endpoint's 5xx explained by Splunk as 'database is locked', narrated as a tarot reading"
 Enter

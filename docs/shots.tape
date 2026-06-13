@@ -1,6 +1,7 @@
 # Capture crisp gallery screenshots. Record with:
-#   KASSI_LLM=anthropic envchain ai vhs docs/shots.tape
-# Produces docs/assets/shot-*.png. The throwaway gif is removed afterwards.
+#   vhs docs/shots.tape
+# Uses the local Granite 4.1 model (per .env). Produces docs/assets/shot-*.png.
+# The throwaway gif is removed afterwards.
 
 Output docs/assets/_shots.gif
 
@@ -15,7 +16,6 @@ Set TypingSpeed 8ms
 
 Hide
 Type "cd /Users/amsrahman/kassi" Enter
-Type "export KASSI_LLM=anthropic KASSI_MODEL=claude-haiku-4-5" Enter
 Type "clear" Enter
 Show
 
@@ -47,6 +47,6 @@ Type "clear" Enter
 Sleep 400ms
 Show
 Type "./scripts/divine_petclinic.sh" Enter
-Sleep 85s
+Sleep 150s
 Screenshot docs/assets/shot-correlate.png
 Sleep 1500ms
