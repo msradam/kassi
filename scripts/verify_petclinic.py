@@ -166,6 +166,10 @@ async def main() -> None:
     print("\nby-path breakdown:")
     for row in corr.get("queries", {}).get("by_path", {}).get("rows", []):
         print("   ", json.dumps(row))
+    if report.get("analysis"):
+        print("\n=== analysis ===")
+        for line in report["analysis"].splitlines():
+            print("   ", line)
     print("\nthe reading:")
     for line in (report.get("narration") or arcana.reading(report["verdict"])).splitlines():
         print("   ", line)

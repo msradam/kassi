@@ -40,7 +40,7 @@ import structlog
 from burr.core import ApplicationBuilder, Condition, State, action
 from theodosia import call_upstream, mount, safe_upstream, tracker
 
-from kassi import arcana, codegen, parse, publish
+from kassi import analysis, arcana, codegen, parse, publish
 from kassi.githost import get_diff
 from kassi.k6gen import fetch_k6_generation_guidance
 from kassi.llm import LLMError, make_llm
@@ -485,7 +485,9 @@ async def detect_anomalies(state: State) -> State:
 async def report(state: State) -> State:
     """Assemble the final report and have the model narrate the run as a tarot reading. Terminal action."""
     verdict = _verdict(state)
+    analysis_text = await _analyze(state, verdict)
     narration = await _narrate(state, verdict)
+    findings = (state["correlation"] or {}).get("findings") or {}
     summary = {
         "mode": state["mode"],
         "endpoints_tested": state["endpoints"],
@@ -502,6 +504,8 @@ async def report(state: State) -> State:
             "splunk_preflight": state["splunk_preflight"],
         },
         "narration": narration,
+        "analysis": analysis_text,
+        "recommendation": analysis.recommend(findings),
         "verdict": verdict,
     }
     if publish.publish_configured():
@@ -599,6 +603,44 @@ def _omen_fallback(state: State, verdict: str) -> str:
             lines.append(f"{name}: {omen}")
     lines.append(arcana.reading(verdict))
     return "\n".join(lines)
+
+
+async def _analyze(state: State, verdict: str) -> str:
+    """The practical, cited writeup: cause, endpoints, evidence, recommendation. Model-written
+    when one is configured, deterministic otherwise, so it always exists."""
+    findings = (state["correlation"] or {}).get("findings") or {}
+    evidence = analysis.gather_evidence(
+        run_result=state["run_result"],
+        findings=findings,
+        anomalies=state["anomalies"],
+        preflight=state["splunk_preflight"],
+    )
+    fallback = analysis.compose_analysis(
+        verdict,
+        mode=state["mode"],
+        endpoints=state["endpoints"],
+        findings=findings,
+        evidence=evidence,
+    )
+    documents = [(source, claim) for claim, source in evidence]
+    instruction = (
+        f"Write the post-run analysis for this load test. Verdict: {verdict}. Ground every fact in "
+        "the provided documents and cite each one's source in the Evidence section."
+    )
+    try:
+        text = await asyncio.to_thread(
+            make_llm().generate,
+            system=analysis.ANALYSIS_SYSTEM,
+            user=instruction,
+            documents=documents,
+        )
+        if text and text.strip():
+            # Some models add markdown emphasis / trailing line-break spaces; normalize for
+            # clean terminal and dashboard display.
+            return "\n".join(line.rstrip().replace("**", "") for line in text.strip().splitlines())
+    except LLMError as exc:
+        log.warning("analysis_llm_failed", error=str(exc))
+    return fallback
 
 
 async def _narrate(state: State, verdict: str) -> str:

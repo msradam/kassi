@@ -1,13 +1,14 @@
-"""LLM wrappers for plan slot-filling.
+"""LLM wrappers behind the narrow ``LLM`` Protocol.
 
-Two interchangeable backends behind the narrow ``LLM`` Protocol:
+Two interchangeable backends:
 
-* :class:`OllamaLLM` (default) calls the local Ollama HTTP API at ``OLLAMA_HOST``.
-* :class:`AnthropicLLM` calls the Claude Messages API over HTTP (``ANTHROPIC_API_KEY``),
-  default model ``claude-haiku-4-5``.
+* :class:`OllamaLLM` (default) calls the local Ollama HTTP API at ``OLLAMA_HOST``, default
+  model IBM ``granite4.1:8b``. ``documents`` are passed as Granite's native grounding role so
+  the model answers strictly from the supplied facts (used for the cited run analysis).
+* :class:`AnthropicLLM` calls the Claude Messages API over HTTP (``ANTHROPIC_API_KEY``);
+  ``documents`` are inlined into the prompt since the API has no native grounding role.
 
 :func:`make_llm` picks the backend from ``KASSI_LLM`` (``ollama`` | ``anthropic``).
-Either way the model only ever fills a closed-enum plan; it never authors k6 source.
 """
 
 from __future__ import annotations
@@ -17,7 +18,7 @@ from typing import Protocol
 
 import httpx
 
-DEFAULT_MODEL = "qwen2.5-coder:7b"
+DEFAULT_MODEL = "granite4.1:8b"
 DEFAULT_ANTHROPIC_MODEL = "claude-haiku-4-5"
 ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages"
 ANTHROPIC_VERSION = "2023-06-01"
@@ -35,6 +36,7 @@ class LLM(Protocol):
         user: str,
         stop: list[str] | None = None,
         format: str | None = None,
+        documents: list[tuple[str, str]] | None = None,
     ) -> str: ...
 
 
@@ -60,13 +62,18 @@ class OllamaLLM:
         user: str,
         stop: list[str] | None = None,
         format: str | None = None,
+        documents: list[tuple[str, str]] | None = None,
     ) -> str:
+        messages: list[dict] = [{"role": "system", "content": system}]
+        # Granite grounds on messages whose role starts with "document"; the part after
+        # "document_" becomes the document title (used for source citations). The model is
+        # instructed by its own template to answer strictly from these documents.
+        for title, text in documents or []:
+            messages.append({"role": f"document_{title}", "content": text})
+        messages.append({"role": "user", "content": user})
         payload: dict = {
             "model": self.model,
-            "messages": [
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-            ],
+            "messages": messages,
             "stream": False,
             "options": {
                 "temperature": self.temperature,
@@ -114,10 +121,16 @@ class AnthropicLLM:
         user: str,
         stop: list[str] | None = None,
         format: str | None = None,
+        documents: list[tuple[str, str]] | None = None,
     ) -> str:
         if not self.api_key:
             raise LLMError("ANTHROPIC_API_KEY is not set")
 
+        if documents:
+            docs = "\n".join(f"[{title}] {text}" for title, text in documents)
+            user = (
+                f"Documents (answer strictly from these, cite the [source] of each fact):\n{docs}\n\n{user}"
+            )
         messages: list[dict] = [{"role": "user", "content": user}]
         prefix = ""
         if format == "json":

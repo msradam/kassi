@@ -38,6 +38,8 @@ def build_event(report: dict[str, Any]) -> dict[str, Any]:
     failed_rate = rr.get("http_req_failed_rate")
     return {
         "verdict": report.get("verdict"),
+        "recommendation": report.get("recommendation"),
+        "analysis": report.get("analysis"),
         "mode": report.get("mode"),
         "endpoints": ", ".join(f"{e.get('method')} {e.get('path')}" for e in endpoints) or None,
         "endpoint_count": len(endpoints),

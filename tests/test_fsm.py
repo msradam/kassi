@@ -87,9 +87,12 @@ _K6_SCRIPT = (
 
 
 class _FakeLLM:
-    def generate(self, *, system: str, user: str, stop=None, format=None) -> str:
-        if "narrat" in system.lower() or "tarot" in system.lower():
+    def generate(self, *, system: str, user: str, stop=None, format=None, documents=None) -> str:
+        s = system.lower()
+        if "narrat" in s or "tarot" in s:
             return "The Fool: the run begins.\nThe Tower: load applied.\nJudgement: passed."
+        if "site-reliability" in s or "analysis" in s:
+            return "Summary\nA load-only regression.\n\nEvidence\n- 5xx observed [Splunk correlate]\n\nRecommendation\nAdd pooling."
         return _K6_SCRIPT
 
 

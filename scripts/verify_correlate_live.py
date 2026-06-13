@@ -188,7 +188,11 @@ async def main() -> None:
             f"splunk={pf['server'].get('version')}",
         )
     print("mcp tool calls: ", [f"{c['server']}.{c['tool']}={c['status']}" for c in prov["tool_calls"]])
-    print("the reading:")
+    if report.get("analysis"):
+        print("\n=== analysis ===")
+        for line in report["analysis"].splitlines():
+            print("   ", line)
+    print("\nthe reading:")
     for line in (report.get("narration") or arcana.reading(report["verdict"])).splitlines():
         print("   ", line)
 
