@@ -13,6 +13,21 @@
         </search>
         <option name="colorBy">value</option>
         <option name="useColors">0</option>
+        <option name="height">110</option>
+      </single>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <single>
+        <title>recommendation</title>
+        <search>
+          <query>index=kassi_runs sourcetype=kassi:run | head 1 | table recommendation</query>
+          <earliest>-30d</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="useColors">0</option>
         <option name="height">90</option>
       </single>
     </panel>
@@ -21,7 +36,7 @@
   <row>
     <panel>
       <single>
-        <title>k6 client p95</title>
+        <title>k6 client p95 (healthy &lt; 100 ms)</title>
         <search>
           <query>index=kassi_runs sourcetype=kassi:run | head 1 | fields k6_p95_ms</query>
           <earliest>-30d</earliest>
@@ -30,41 +45,42 @@
         <option name="numberPrecision">0.0</option>
         <option name="unit">ms</option>
         <option name="unitPosition">after</option>
-        <option name="rangeColors">["0x53a051","0xf8be34","0xdc4e41"]</option>
+        <option name="rangeColors">["0x53a051","0xb05c86","0xf456a1"]</option>
         <option name="rangeValues">[100,250]</option>
         <option name="useColors">1</option>
       </single>
     </panel>
     <panel>
       <single>
-        <title>k6 failed %</title>
+        <title>k6 failed (healthy 0%)</title>
         <search>
           <query>index=kassi_runs sourcetype=kassi:run | head 1 | fields k6_failed_pct</query>
           <earliest>-30d</earliest>
           <latest>now</latest>
         </search>
         <option name="unit">%</option>
-        <option name="rangeColors">["0x53a051","0xf8be34","0xdc4e41"]</option>
+        <option name="unitPosition">after</option>
+        <option name="rangeColors">["0x53a051","0xb05c86","0xf456a1"]</option>
         <option name="rangeValues">[1,10]</option>
         <option name="useColors">1</option>
       </single>
     </panel>
     <panel>
       <single>
-        <title>server-side 5xx</title>
+        <title>server-side 5xx (healthy 0)</title>
         <search>
           <query>index=kassi_runs sourcetype=kassi:run | head 1 | fields srv_5xx</query>
           <earliest>-30d</earliest>
           <latest>now</latest>
         </search>
-        <option name="rangeColors">["0x53a051","0xdc4e41"]</option>
+        <option name="rangeColors">["0x53a051","0xf456a1"]</option>
         <option name="rangeValues">[1]</option>
         <option name="useColors">1</option>
       </single>
     </panel>
     <panel>
       <single>
-        <title>server-side p95</title>
+        <title>server-side p95 (healthy &lt; 100 ms)</title>
         <search>
           <query>index=kassi_runs sourcetype=kassi:run | head 1 | fields srv_p95_ms</query>
           <earliest>-30d</earliest>
@@ -73,7 +89,7 @@
         <option name="numberPrecision">0.0</option>
         <option name="unit">ms</option>
         <option name="unitPosition">after</option>
-        <option name="rangeColors">["0x53a051","0xf8be34","0xdc4e41"]</option>
+        <option name="rangeColors">["0x53a051","0xb05c86","0xf456a1"]</option>
         <option name="rangeValues">[100,250]</option>
         <option name="useColors">1</option>
       </single>
@@ -95,7 +111,7 @@
         <option name="charting.chart.nullValueMode">connect</option>
         <option name="charting.chart.showMarkers">true</option>
         <option name="charting.lineWidth">3</option>
-        <option name="charting.fieldColors">{"k6_p95_ms":0x4f9ed6,"srv_p95_ms":0xd6336c}</option>
+        <option name="charting.fieldColors">{"k6_p95_ms":0xb05c86,"srv_p95_ms":0xf456a1}</option>
         <option name="charting.legend.placement">bottom</option>
       </chart>
     </panel>
@@ -110,7 +126,7 @@
         <option name="charting.chart">column</option>
         <option name="charting.axisTitleX.text">endpoint</option>
         <option name="charting.axisTitleY.text">count / ms</option>
-        <option name="charting.fieldColors">{"errors":0xdc4e41,"requests":0x4f9ed6,"p95_ms":0xf8be34}</option>
+        <option name="charting.fieldColors">{"errors":0xf456a1,"requests":0x6b6b78,"p95_ms":0xf8be34}</option>
         <option name="charting.chart.showDataLabels">all</option>
         <option name="charting.legend.placement">bottom</option>
       </chart>
@@ -128,6 +144,10 @@
         </search>
         <option name="drilldown">none</option>
         <option name="count">25</option>
+        <format type="color" field="srv_5xx">
+          <colorPalette type="list">[0x53a051,0xf456a1]</colorPalette>
+          <scale type="threshold">1</scale>
+        </format>
       </table>
     </panel>
   </row>
