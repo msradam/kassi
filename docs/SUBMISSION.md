@@ -115,6 +115,9 @@ audit ledger.
 - The forecast runs on Splunk's own ML: the AI Toolkit's `StateSpaceForecast` over the test
   window, invoked through the same `splunk_run_query` MCP tool, with the core `predict`
   command as an automatic fallback so the phase works on any Splunk.
+- The result loop closes back into Splunk: every run publishes its verdict and metrics to
+  `index=kassi_runs` over HEC, and a Splunk dashboard renders the client-and-server join over
+  time, so the analysis lives where the ops team already works.
 
 ## What we learned
 
@@ -131,8 +134,6 @@ audit ledger.
 
 ## What's next for Kassi: Synthetic Load Generation
 
-- Ship k6 results into Splunk via HEC so client-side and server-side metrics live together
-  in dashboards.
 - Use a Splunk-hosted model for a root-cause narrative over the correlated window.
 - Use the AI Assistant for SPL to generate correlation queries from intent.
 - Grow synthetic load generation: schema-aware request synthesis, realistic traffic mixes

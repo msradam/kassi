@@ -286,6 +286,22 @@ Every upstream call is on the hash-chained ledger and in `mcp_provenance`. See
 For a lighter reproduction without a target app, `scripts/verify_correlate_live.py` cans the
 k6 metrics and ingests sample telemetry, but still queries the real official Splunk MCP Server.
 
+## Dashboard
+
+The `report` phase publishes each run (verdict, k6 client metrics, the server-side correlation,
+the forecast, the root cause) to `index=kassi_runs` over HEC, so the client-and-server join lives
+in a Splunk dashboard, not just the terminal. The agent stays CLI/MCP; Splunk is the reporting
+surface. Provision it once:
+
+```bash
+uv run python scripts/setup_dashboard.py   # creates the index, an HEC token, and the dashboard
+# paste the printed KASSI_HEC_TOKEN into .env, then every run self-publishes
+```
+
+The dashboard (`docs/dashboard/kassi_overview.xml`) shows the latest verdict, k6 vs server-side
+p95, p95 across runs, server-side errors by endpoint, and a run-history table. Gated on
+`KASSI_HEC_TOKEN`: with it unset, runs simply don't publish.
+
 ## Development
 
 ```bash

@@ -128,3 +128,20 @@ requests, p95 318 ms, 59.4% failed. Splunk server-side localized it: `POST /api/
 59.4% 5xx and p95 318.44 ms, with the dominant error "database is locked" (1797x). The
 verdict folds that in: `server-side regression: /api/visits p95 318.44ms, 59.4% 5xx, cause
 'database is locked'`. That root cause is what k6 alone cannot see.
+
+## The output dashboard
+
+kassi also writes back to Splunk. `scripts/setup_dashboard.py` creates a `kassi_runs` index, an
+HEC token scoped to it, and a dashboard view (`docs/dashboard/kassi_overview.xml`):
+
+```bash
+uv run python scripts/setup_dashboard.py
+# prints KASSI_HEC_TOKEN; add it (plus KASSI_HEC_URL, KASSI_RUN_INDEX) to .env
+```
+
+With the token set, the `report` phase publishes each run (verdict, k6 client metrics,
+server-side correlation, StateSpaceForecast band, root cause) to `index=kassi_runs` as a
+`kassi:run` event. The dashboard at `http://localhost:8000/en-US/app/search/kassi_overview`
+renders the client-and-server join: latest verdict, k6 vs server-side p95, p95 across runs,
+server-side errors by endpoint (from `index=web`), and a run-history table. Publishing is gated
+on `KASSI_HEC_TOKEN`, so runs never fail for lack of a dashboard.
