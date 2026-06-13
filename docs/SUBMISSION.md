@@ -1,8 +1,8 @@
-# kassi: foresee what your change does to production
+# kassi: an AI agent with second sight for your deploys
 
-> *Closed-loop observability, driven by change.* Most outages are self-inflicted by a change;
-> kassi reads your change's fate in Splunk's telemetry before prod does, and unlike Cassandra,
-> it brings the proof.
+> Point it at a code change and kassi puts it under load, reads the verdict from Splunk, and
+> names the regression before prod does. Cassandra foresaw disaster and was never believed;
+> kassi brings the proof.
 
 **Elevator pitch.** Roughly 80% of production outages are self-inflicted, they trace back to a
 change. The warning is usually there; it just isn't believed, because a change's real impact
