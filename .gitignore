@@ -19,3 +19,6 @@ wheels/
 .theodosia/
 .burr/
 info.md
+
+# Splunkbase add-on packages (e.g. Python for Scientific Computing), downloaded locally
+*.tgz

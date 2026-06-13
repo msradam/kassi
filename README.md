@@ -197,7 +197,7 @@ stateDiagram-v2
   tool to answer what k6 client-side cannot: a rollup (overview), a timeline (when it
   degraded), a by-endpoint breakdown (which route degraded), and the dominant server-side
   error (why). It synthesizes the actionable findings, so the run can say "POST /api/visits
-  regressed: 45% 5xx, p95 285ms vs 2ms baseline, cause 'database is locked'", which the k6
+  regressed: 59% 5xx, p95 318ms vs 2ms baseline, cause 'database is locked'", which the k6
   summary alone never shows. Override the rollup per run with `splunk_spl`.
 - `detect_anomalies` runs Splunk's own ML over the same window through the same
   `splunk_run_query` tool: `predict` forecasts the latency band and `anomalydetection`
@@ -236,40 +236,47 @@ Each phase is a card the agent turns. Run `kassi arcana` for the full spread.
 
 Verified end-to-end against **Splunk Enterprise 10.4.0** with the **official Splunk MCP
 Server** (Splunkbase 7931, v1.2.0), called live at runtime. `scripts/verify_petclinic.py`
-drives the whole FSM with **nothing canned**: it starts a real FastAPI app, runs **real k6**
-through the k6 MCP server against it, reads the server-side regression back from Splunk
-through the four `correlate` queries, and runs Splunk's own `predict` + `anomalydetection`
-over the same window in `detect_anomalies`, all on the official `splunk_run_query` tool.
+drives the whole FSM with **nothing canned**, in **diff mode**: a throwaway git repo holds a
+healthy petclinic baseline plus a second commit that adds `POST /api/visits`, so kassi picks
+the changed endpoint from the diff, runs **real k6** through the k6 MCP server against it,
+reads the server-side regression back from Splunk through the four `correlate` queries, and
+runs Splunk's own `predict` + `anomalydetection` over the same window in `detect_anomalies`,
+all on the official `splunk_run_query` tool.
 
 ```console
 $ KASSI_LLM=anthropic envchain ai uv run python scripts/verify_petclinic.py
 target app:  petclinic (flawed POST /api/visits) at http://127.0.0.1:8400
+diff mode:   HEAD~1..HEAD adds POST /api/visits         # kassi tests exactly the changed endpoint
+... extract_endpoints_ok count=1                        # one new route, read from the diff
 ... validation failed (attempt 0): Unexpected token ILLEGAL ... Missing k6 module imports
-... fix_script_done attempt=1                          # repaired from the real k6 error
-... run_test_ok exit_code=0 reqs=6666
-verdict:        server-side regression: /api/visits p95 285.59ms, 45.2% 5xx, cause 'database is locked'
-k6 client-side: 6666 reqs, p95 280.92 ms, 15% failed
-worst endpoint: /api/visits   45.2% errs   p95 285.59 ms    <- the new endpoint
-                /api/owners     0.0% errs   p95   2.25 ms    <- healthy baseline
-                /api/vets       0.0% errs   p95   1.82 ms    <- healthy baseline
-root cause:     database is locked  (990x)
-mcp tool calls: k6.{list_sections, get_documentation x4, generate_script(prompt),
-                    validate_script x2, run_script}
-                splunk.{get_info, get_index_info, get_metadata, run_query x6}
+... fix_script_done attempt=1                           # repaired from the real k6 error
+... run_test_ok exit_code=0 reqs=2937
+verdict:         server-side regression: /api/visits p95 318.44ms, 59.4% 5xx, cause 'database is locked'
+endpoints:       POST /api/visits
+k6 client-side:  2937 reqs, p95 318.44 ms, 59.4% failed
+worst endpoint:  /api/visits  59.4% errs  p95 318.44 ms
+root cause:      database is locked  (1797x)
+anomaly scan:    predict + anomalydetection over 13 buckets, 1 anomalous bucket
+mcp tool calls:  k6.{list_sections, get_documentation x4, generate_script(prompt),
+                     validate_script x2, run_script}
+                 splunk.{get_info, get_index_info, get_metadata, run_query x6}
 the reading:
-    🂠  The Magician: Script authored and validated in one repair round.
-    🂠  The Tower: 6666 requests executed with p95 280.92 ms, 15.04% failure.
-    🂠  The Star: predict + anomalydetection flagged the saturation bucket on /api/visits.
+    🂠  The Fool: Diff mode revealed 1 endpoint under scrutiny.
+    🂠  The Magician: Script authored, repaired once, validated successfully.
+    🂠  The Tower: 2937 requests executed; p95 318.44 ms, 59.4% failure rate.
+    🂠  The Lovers: /api/visits worst at 59.4% errors, database locked 1797 times.
+    🂠  The Star: predict + anomalydetection flagged the anomalous bucket on /api/visits.
     🂠  Judgement: Server regression confirmed: /api/visits, database lock root cause.
 ```
 
-What this proves, all at runtime against live Splunk: the model authored a script that
-failed k6 validation, the `fix_script` loop repaired it from the real k6 error and
-re-validated, real k6 drove 6666 requests, the four `correlate` queries on the official
-Splunk MCP Server isolated the new endpoint (`/api/visits` at 45% 5xx and a ~130x p95 vs the
-healthy routes) and named the root cause k6 cannot see ("database is locked"), and Splunk's
-own `predict` + `anomalydetection` confirmed the saturation bucket statistically. Every
-upstream call is on the hash-chained ledger and in `mcp_provenance`. See
+What this proves, all at runtime against live Splunk: kassi read the new `POST /api/visits`
+from the git diff (the healthy GET routes are untouched by the change, so it tests exactly
+the new endpoint), the model authored a script that failed k6 validation, the `fix_script`
+loop repaired it from the real k6 error and re-validated, real k6 drove 2937 requests, the
+four `correlate` queries on the official Splunk MCP Server isolated the new endpoint
+(`/api/visits` at 59.4% 5xx) and named the root cause k6 cannot see ("database is locked"),
+and Splunk's own `predict` + `anomalydetection` flagged the saturation bucket statistically.
+Every upstream call is on the hash-chained ledger and in `mcp_provenance`. See
 [`docs/SPLUNK_SETUP.md`](docs/SPLUNK_SETUP.md) for the full setup.
 
 For a lighter reproduction without a target app, `scripts/verify_correlate_live.py` cans the

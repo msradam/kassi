@@ -41,16 +41,17 @@ change (a git diff) or a plain-language intent and it:
 The driving agent (Claude Code, Cursor, any MCP client) never sees k6 or Splunk. It sees
 one tool, `step(action, inputs)`, and takes the workflow one move at a time.
 
-In a verified run against live Splunk, one agent orchestrated 18 tool calls across both
-MCP servers: it grounded generation in the live k6 docs, authored the script with k6's own
-`generate_script` prompt and repaired it from a real k6 validation error, confirmed the
-`web` index on the official Splunk MCP Server (`access_json` sourcetype, Splunk 10.4.0),
-drove 6666 client-side k6 requests (p95 280.92 ms, 15% failed), then correlated them to the
-server-side telemetry over the test window: the new `POST /api/visits` at 45.2% 5xx and p95
-285.59 ms against healthy baselines near 2 ms, root cause `database is locked` (990x), and
-Splunk's own `predict` + `anomalydetection` confirmed the saturation bucket statistically.
-The client failure rate is explained by the server-side errors, correlated automatically,
-with every tool call on an audit ledger.
+In a verified run against live Splunk, driven from a git diff that adds `POST /api/visits`,
+one agent orchestrated 18 tool calls across both MCP servers: it extracted the changed
+endpoint from the diff, grounded generation in the live k6 docs, authored the script with
+k6's own `generate_script` prompt and repaired it from a real k6 validation error, confirmed
+the `web` index on the official Splunk MCP Server (`access_json` sourcetype, Splunk 10.4.0),
+drove 2937 client-side k6 requests (p95 318 ms, 59.4% failed), then correlated them to the
+server-side telemetry over the test window: the new `POST /api/visits` at 59.4% 5xx and p95
+318.44 ms, root cause `database is locked` (1797x), and Splunk's own `predict` +
+`anomalydetection` flagged the anomalous bucket statistically. The client failure rate is
+explained by the server-side errors, correlated automatically, with every tool call on an
+audit ledger.
 
 ## How we built it
 
