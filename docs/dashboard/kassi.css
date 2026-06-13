@@ -75,12 +75,32 @@ h3.dashboard-element-title,
   font-family: Georgia, serif !important;
 }
 
-/* table: dark, magenta header underline */
-.table thead th {
+/* tables: dark rows, magenta serif header with an underline (Splunk uses
+   .table-chrome / .table-striped, so target those, not just .table) */
+table.table-chrome,
+table.table,
+.table-chrome tbody,
+.dashboard-panel .table {
+  background: transparent !important;
+}
+.table-chrome thead th,
+table.table thead th,
+table th.sorts,
+table th {
   font-family: Georgia, serif !important;
   color: var(--kassi-magenta) !important;
-  border-bottom: 1px solid rgba(244, 86, 161, 0.4) !important;
+  background: rgba(244, 86, 161, 0.1) !important;
+  border-bottom: 2px solid var(--kassi-magenta) !important;
+  font-weight: 700 !important;
 }
-.table td {
+.table-striped > tbody > tr:nth-child(odd) > td {
+  background: rgba(23, 13, 21, 0.55) !important;
+}
+.table-striped > tbody > tr:nth-child(even) > td {
+  background: rgba(11, 7, 12, 0.65) !important;
+}
+.table-chrome td,
+table.table td {
   color: var(--kassi-ink) !important;
+  border-color: rgba(244, 86, 161, 0.12) !important;
 }

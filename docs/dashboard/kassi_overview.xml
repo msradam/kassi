@@ -7,14 +7,28 @@
       <single>
         <title>latest verdict</title>
         <search>
-          <query>index=kassi_runs sourcetype=kassi:run | head 1 | table verdict</query>
+          <query>index=kassi_runs sourcetype=kassi:run | head 1 | eval kind=case(srv_5xx&gt;0,"REGRESSION", k6_failed_pct&gt;0,"DEGRADED", forecast_p95_ms&gt;1.25*srv_p95_ms,"DEGRADING", true(),"HEALTHY") | fields kind</query>
           <earliest>-30d</earliest>
           <latest>now</latest>
         </search>
-        <option name="colorBy">value</option>
         <option name="useColors">0</option>
-        <option name="height">110</option>
+        <option name="height">90</option>
       </single>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>the reading (latest run)</title>
+      <table>
+        <search>
+          <query>index=kassi_runs sourcetype=kassi:run | head 1 | eval "client p95"=k6_p95_ms." ms", "client failed"=k6_failed_pct."%", "server p95"=srv_p95_ms." ms", "server 5xx"=srv_5xx, "root cause"=coalesce(root_cause,"none"), "forecast p95"=forecast_p95_ms." ms (".forecaster.")" | rename worst_path AS endpoint | table endpoint "client p95" "client failed" "server p95" "server 5xx" "root cause" "forecast p95"</query>
+          <earliest>-30d</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="drilldown">none</option>
+        <option name="count">1</option>
+      </table>
     </panel>
   </row>
 
@@ -29,69 +43,6 @@
         </search>
         <option name="useColors">0</option>
         <option name="height">90</option>
-      </single>
-    </panel>
-  </row>
-
-  <row>
-    <panel>
-      <single>
-        <title>k6 client p95 (healthy &lt; 100 ms)</title>
-        <search>
-          <query>index=kassi_runs sourcetype=kassi:run | head 1 | fields k6_p95_ms</query>
-          <earliest>-30d</earliest>
-          <latest>now</latest>
-        </search>
-        <option name="numberPrecision">0.0</option>
-        <option name="unit">ms</option>
-        <option name="unitPosition">after</option>
-        <option name="rangeColors">["0x53a051","0xb05c86","0xf456a1"]</option>
-        <option name="rangeValues">[100,250]</option>
-        <option name="useColors">1</option>
-      </single>
-    </panel>
-    <panel>
-      <single>
-        <title>k6 failed (healthy 0%)</title>
-        <search>
-          <query>index=kassi_runs sourcetype=kassi:run | head 1 | fields k6_failed_pct</query>
-          <earliest>-30d</earliest>
-          <latest>now</latest>
-        </search>
-        <option name="unit">%</option>
-        <option name="unitPosition">after</option>
-        <option name="rangeColors">["0x53a051","0xb05c86","0xf456a1"]</option>
-        <option name="rangeValues">[1,10]</option>
-        <option name="useColors">1</option>
-      </single>
-    </panel>
-    <panel>
-      <single>
-        <title>server-side 5xx (healthy 0)</title>
-        <search>
-          <query>index=kassi_runs sourcetype=kassi:run | head 1 | fields srv_5xx</query>
-          <earliest>-30d</earliest>
-          <latest>now</latest>
-        </search>
-        <option name="rangeColors">["0x53a051","0xf456a1"]</option>
-        <option name="rangeValues">[1]</option>
-        <option name="useColors">1</option>
-      </single>
-    </panel>
-    <panel>
-      <single>
-        <title>server-side p95 (healthy &lt; 100 ms)</title>
-        <search>
-          <query>index=kassi_runs sourcetype=kassi:run | head 1 | fields srv_p95_ms</query>
-          <earliest>-30d</earliest>
-          <latest>now</latest>
-        </search>
-        <option name="numberPrecision">0.0</option>
-        <option name="unit">ms</option>
-        <option name="unitPosition">after</option>
-        <option name="rangeColors">["0x53a051","0xb05c86","0xf456a1"]</option>
-        <option name="rangeValues">[100,250]</option>
-        <option name="useColors">1</option>
       </single>
     </panel>
   </row>

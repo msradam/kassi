@@ -576,7 +576,7 @@ def _verdict(state: State) -> str:
     if wp and te:
         return (
             f"server-side regression: {wp['path']} p95 {wp['p95_ms']}ms, "
-            f"{wp['err_pct']}% 5xx, cause '{te['error_message']}'"
+            f"{wp['err_pct']}% 5xx, cause: {te['error_message']}"
         )
     rr = state["run_result"]
     return "passed" if rr.get("success") else f"ran with failures (exit {rr.get('exit_code')})"
