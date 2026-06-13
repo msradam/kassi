@@ -1,0 +1,124 @@
+<dashboard theme="dark" version="1.1">
+  <label>kassi — load test, explained by Splunk</label>
+  <description>Client-side k6 metrics joined to the target's server-side telemetry over the exact test window. Each run is published to index=kassi_runs by kassi's report phase.</description>
+
+  <row>
+    <panel>
+      <single>
+        <title>latest verdict</title>
+        <search>
+          <query>index=kassi_runs sourcetype=kassi:run | head 1 | table verdict</query>
+          <earliest>-30d</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="colorBy">value</option>
+        <option name="useColors">0</option>
+        <option name="height">90</option>
+      </single>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <single>
+        <title>k6 client p95 (ms)</title>
+        <search>
+          <query>index=kassi_runs sourcetype=kassi:run | head 1 | fields k6_p95_ms</query>
+          <earliest>-30d</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="numberPrecision">0.00</option>
+        <option name="rangeColors">["0x53a051","0xf8be34","0xdc4e41"]</option>
+        <option name="rangeValues">[100,250]</option>
+        <option name="useColors">1</option>
+      </single>
+    </panel>
+    <panel>
+      <single>
+        <title>k6 failed %</title>
+        <search>
+          <query>index=kassi_runs sourcetype=kassi:run | head 1 | fields k6_failed_pct</query>
+          <earliest>-30d</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="unit">%</option>
+        <option name="rangeColors">["0x53a051","0xf8be34","0xdc4e41"]</option>
+        <option name="rangeValues">[1,10]</option>
+        <option name="useColors">1</option>
+      </single>
+    </panel>
+    <panel>
+      <single>
+        <title>server-side 5xx</title>
+        <search>
+          <query>index=kassi_runs sourcetype=kassi:run | head 1 | fields srv_5xx</query>
+          <earliest>-30d</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="rangeColors">["0x53a051","0xdc4e41"]</option>
+        <option name="rangeValues">[1]</option>
+        <option name="useColors">1</option>
+      </single>
+    </panel>
+    <panel>
+      <single>
+        <title>server-side p95 (ms)</title>
+        <search>
+          <query>index=kassi_runs sourcetype=kassi:run | head 1 | fields srv_p95_ms</query>
+          <earliest>-30d</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="numberPrecision">0.00</option>
+        <option name="rangeColors">["0x53a051","0xf8be34","0xdc4e41"]</option>
+        <option name="rangeValues">[100,250]</option>
+        <option name="useColors">1</option>
+      </single>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <chart>
+        <title>client vs server p95 across runs (the join)</title>
+        <search>
+          <query>index=kassi_runs sourcetype=kassi:run | sort 0 _time | table _time k6_p95_ms srv_p95_ms</query>
+          <earliest>-30d</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="charting.chart">line</option>
+        <option name="charting.axisTitleX.text">run</option>
+        <option name="charting.axisTitleY.text">p95 (ms)</option>
+        <option name="charting.chart.nullValueMode">connect</option>
+        <option name="charting.legend.placement">bottom</option>
+      </chart>
+    </panel>
+    <panel>
+      <chart>
+        <title>server-side errors by endpoint (last 60m)</title>
+        <search>
+          <query>index=web sourcetype=access_json | stats count AS requests, sum(eval(if(status&gt;=500,1,0))) AS errors, round(perc95(response_time),1) AS p95_ms BY path | sort - errors</query>
+          <earliest>-60m</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="charting.chart">column</option>
+        <option name="charting.axisTitleX.text">endpoint</option>
+        <option name="charting.legend.placement">bottom</option>
+      </chart>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <table>
+        <title>run history</title>
+        <search>
+          <query>index=kassi_runs sourcetype=kassi:run | sort - _time | eval when=strftime(_time,"%Y-%m-%d %H:%M") | table when mode endpoints verdict k6_reqs k6_p95_ms k6_failed_pct srv_5xx root_cause forecaster forecast_p95_ms | head 25</query>
+          <earliest>-30d</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="drilldown">none</option>
+        <option name="count">25</option>
+      </table>
+    </panel>
+  </row>
+</dashboard>

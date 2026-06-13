@@ -40,7 +40,7 @@ import structlog
 from burr.core import ApplicationBuilder, Condition, State, action
 from theodosia import call_upstream, mount, safe_upstream, tracker
 
-from kassi import arcana, codegen, parse
+from kassi import arcana, codegen, parse, publish
 from kassi.githost import get_diff
 from kassi.k6gen import fetch_k6_generation_guidance
 from kassi.llm import LLMError, make_llm
@@ -504,6 +504,9 @@ async def report(state: State) -> State:
         "narration": narration,
         "verdict": verdict,
     }
+    if publish.publish_configured():
+        summary["published"] = await asyncio.to_thread(publish.publish_run, summary)
+        log.info("report_published", ok=summary["published"])
     return state.update(report=summary, stage="done")
 
 
