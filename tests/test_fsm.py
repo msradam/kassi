@@ -174,11 +174,15 @@ async def test_splunk_correlation_when_configured(monkeypatch):
     assert set(correlation["queries"]) == {"rollup", "timeline", "by_path", "root_cause"}
     assert "index=web" in correlation["queries"]["rollup"]["spl"]
 
-    # detect_anomalies runs Splunk's own predict + anomalydetection over the same window.
+    # detect_anomalies runs the AI Toolkit's StateSpaceForecast + anomalydetection, both
+    # scoped to the same window. The forecaster falls back to core `predict` only when the
+    # StateSpaceForecast query is unusable; the fake upstream returns usable rows, so the
+    # default StateSpaceForecast query is what gets recorded.
     anomalies = report["anomalies"]
     assert anomalies["available"] is True
+    assert anomalies["forecaster"] == "statespace"
     assert set(anomalies["queries"]) == {"forecast", "anomalies"}
-    assert "predict" in anomalies["queries"]["forecast"]["spl"]
+    assert "StateSpaceForecast" in anomalies["queries"]["forecast"]["spl"]
     assert "anomalydetection" in anomalies["queries"]["anomalies"]["spl"]
     assert "anomaly" in correlation["findings"]
 

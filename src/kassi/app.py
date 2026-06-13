@@ -20,8 +20,9 @@ an explicit gate: on a validation failure ``fix_script`` repairs the script from
 (real stderr + issues), bounded by ``MAX_FIX_ATTEMPTS``, then falls back to the deterministic
 scaffold. So the model never produces an unvalidated script that reaches ``run_test``.
 ``doc_lookup`` (k6 MCP docs), ``splunk_preflight`` (Splunk index/metadata/info), and
-``detect_anomalies`` (Splunk's own ``predict`` + ``anomalydetection`` over the test window)
-are MCP-native phases: all degrade gracefully via ``safe_upstream`` and record every upstream
+``detect_anomalies`` (the AI Toolkit's ``StateSpaceForecast``, or core ``predict`` as a
+fallback, plus ``anomalydetection`` over the test window) are MCP-native phases: all degrade
+gracefully via ``safe_upstream`` and record every upstream
 tool call to ``mcp_calls`` for the report's provenance. ``report`` narrates the run with the
 model, themed as a tarot reading (falling back to the static omens when the model is absent).
 """
@@ -30,6 +31,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import time
 from pathlib import Path
 from typing import Any
@@ -408,27 +410,45 @@ async def correlate(state: State, splunk_spl: str = "") -> State:
     writes=["anomalies", "correlation", "mcp_calls", "stage"],
 )
 async def detect_anomalies(state: State) -> State:
-    """Run Splunk's own ML over the test window via the Splunk MCP `splunk_run_query` tool: `predict` forecasts the latency band and flags where the load breached it, and `anomalydetection` flags statistically outlying buckets. This is the saturation onset found statistically, independent of the fixed error thresholds. Non-blocking: degrades to no anomalies when Splunk is unavailable."""
+    """Run Splunk's own ML over the test window via the Splunk MCP `splunk_run_query` tool: the AI Toolkit's `StateSpaceForecast` projects the latency band (falling back to the core `predict` command when the toolkit is unavailable), and `anomalydetection` flags statistically outlying buckets. This is the saturation onset found statistically, independent of the fixed error thresholds. Non-blocking: degrades to no anomalies when Splunk is unavailable."""
     earliest = state["run_started_at"] or (time.time() - 300)
     latest = state["run_ended_at"] or time.time()
-    queries = parse.build_anomaly_queries(state["splunk_index"], earliest, latest)
+    index = state["splunk_index"]
+    forecaster = os.environ.get("KASSI_FORECASTER", "statespace").strip().lower()
 
     calls = state["mcp_calls"]
     out: dict[str, Any] = {}
     rows_by_query: dict[str, list] = {}
     available = False
-    for name, spl in queries.items():
+
+    async def run(name: str, spl: str) -> bool:
+        nonlocal calls, available
         result = await safe_upstream(
             "splunk_ml", SPLUNK_SERVER, "splunk_run_query", {"query": spl}, expect="dict"
         )
         calls = _record(calls, SPLUNK_SERVER, "splunk_run_query", result.status)
-        rows = parse.summarize_correlation(result.data)
-        out[name] = {"spl": spl, "rows": rows}
-        rows_by_query[name] = rows
+        out[name] = {"spl": spl, "rows": parse.summarize_correlation(result.data)}
+        rows_by_query[name] = out[name]["rows"]
         available = available or result.usable
+        return result.usable
 
-    summary = parse.summarize_anomalies(rows_by_query.get("forecast", []), rows_by_query.get("anomalies", []))
-    anomalies = {"available": available, "queries": out, **summary}
+    queries = parse.build_anomaly_queries(index, earliest, latest, forecaster=forecaster)
+    forecast_usable = await run("forecast", queries["forecast"])
+    # StateSpaceForecast needs the Python for Scientific Computing add-on; when it is absent
+    # the query fails, so fall back to the always-available core `predict` command.
+    if forecaster == "statespace" and not forecast_usable:
+        forecaster = "predict"
+        fallback = parse.build_anomaly_queries(index, earliest, latest, forecaster="predict")
+        await run("forecast", fallback["forecast"])
+    await run("anomalies", queries["anomalies"])
+
+    algo = "StateSpaceForecast" if forecaster == "statespace" else "predict"
+    summary = parse.summarize_anomalies(
+        rows_by_query.get("forecast", []),
+        rows_by_query.get("anomalies", []),
+        method=f"splunk {algo} + anomalydetection",
+    )
+    anomalies = {"available": available, "forecaster": forecaster, "queries": out, **summary}
 
     correlation = dict(state["correlation"] or {})
     findings = dict(correlation.get("findings") or {})
@@ -437,6 +457,7 @@ async def detect_anomalies(state: State) -> State:
     log.info(
         "detect_anomalies_done",
         available=available,
+        forecaster=forecaster,
         breaches=summary["forecast_breaches"],
         buckets=summary["anomalous_buckets"],
     )
@@ -551,10 +572,10 @@ def _phase_facts(state: State, verdict: str) -> str:
         lines.append(f"- The Lovers (correlate): {detail}")
         if an := (state["anomalies"] or {}):
             lines.append(
-                f"- The Star (detect_anomalies): predict forecast p95 {an.get('forecast_p95_ms')}ms "
-                f"(peak {an.get('peak_p95_ms')}ms over {an.get('buckets_analyzed', 0)} buckets); "
-                f"anomalydetection flagged {an.get('anomalous_buckets', 0)} anomalous bucket(s), "
-                f"{an.get('forecast_breaches', 0)} band breach(es)"
+                f"- The Star (detect_anomalies): {an.get('method', 'forecast')} — forecast p95 "
+                f"{an.get('forecast_p95_ms')}ms (peak {an.get('peak_p95_ms')}ms over "
+                f"{an.get('buckets_analyzed', 0)} buckets); {an.get('anomalous_buckets', 0)} "
+                f"anomalous bucket(s), {an.get('forecast_breaches', 0)} band breach(es)"
             )
     lines.append(f"- Judgement (report): verdict = {verdict}")
     return "\n".join(lines)

@@ -109,27 +109,41 @@ def build_correlation_queries(index: str, earliest: float, latest: float, span: 
     }
 
 
-def build_anomaly_queries(index: str, earliest: float, latest: float, span: str = "2s") -> dict[str, str]:
+def build_anomaly_queries(
+    index: str, earliest: float, latest: float, span: str = "2s", forecaster: str = "statespace"
+) -> dict[str, str]:
     """Splunk's own ML over the test window, the statistical questions fixed thresholds
-    cannot answer. `forecast`: `predict` casts a latency band and the load breaches it.
-    `anomalies`: `anomalydetection` flags statistically outlying buckets. Both run through
-    the Splunk MCP `splunk_run_query` tool, scoped to the same window as the rollup.
+    cannot answer. `forecast` projects the latency band; `anomalies` flags statistically
+    outlying buckets. Both run through the Splunk MCP `splunk_run_query` tool, scoped to the
+    same window as the rollup.
+
+    `forecaster="statespace"` uses the AI Toolkit's `StateSpaceForecast` algorithm (requires
+    the Python for Scientific Computing add-on) and renames its output to the same
+    forecast/upper/lower fields as the core `predict` command, so the summary is identical.
+    `forecaster="predict"` is the always-available core-SPL fallback.
     """
     base = f"search index={index} earliest={int(earliest)} latest={int(latest)}"
+    timeline = f"{base} | timechart span={span} perc95(response_time) AS p95_ms"
+    if forecaster == "statespace":
+        forecast = (
+            f"{timeline} | fit StateSpaceForecast p95_ms forecast_k=5 conf_interval=95 "
+            '| rename "predicted(p95_ms)" AS forecast '
+            '"upper95(predicted(p95_ms))" AS upper "lower95(predicted(p95_ms))" AS lower'
+        )
+    else:
+        forecast = f"{timeline} | predict p95_ms AS forecast upper95=upper lower95=lower"
     return {
-        "forecast": (
-            f"{base} | timechart span={span} perc95(response_time) AS p95_ms "
-            "| predict p95_ms AS forecast upper95=upper lower95=lower"
-        ),
-        "anomalies": (
-            f"{base} | timechart span={span} perc95(response_time) AS p95_ms "
-            "| anomalydetection action=annotate p95_ms"
-        ),
+        "forecast": forecast,
+        "anomalies": f"{timeline} | anomalydetection action=annotate p95_ms",
     }
 
 
-def summarize_anomalies(forecast: list[dict[str, Any]], anomalies: list[dict[str, Any]]) -> dict[str, Any]:
-    """Fold the `predict` and `anomalydetection` rows into a compact verdict block:
+def summarize_anomalies(
+    forecast: list[dict[str, Any]],
+    anomalies: list[dict[str, Any]],
+    method: str = "splunk predict + anomalydetection",
+) -> dict[str, Any]:
+    """Fold the forecast and `anomalydetection` rows into a compact verdict block:
     the forecast latency band, how many buckets breached it, how many were flagged
     statistically anomalous, and when the first anomaly fired (the saturation onset)."""
     breaches, actuals, forecasts = [], [], []
@@ -148,7 +162,7 @@ def summarize_anomalies(forecast: list[dict[str, Any]], anomalies: list[dict[str
     onsets = sorted([b["time"] for b in breaches] + [r.get("_time") for r in flagged if r.get("_time")])
 
     return {
-        "method": "splunk predict + anomalydetection",
+        "method": method,
         "buckets_analyzed": len(actuals),
         "peak_p95_ms": max(actuals) if actuals else None,
         "forecast_p95_ms": round(forecasts[-1], 2) if forecasts else None,

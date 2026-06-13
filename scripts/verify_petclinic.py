@@ -159,7 +159,7 @@ async def main() -> None:
     anom = report.get("anomalies") or {}
     if anom:
         print(
-            f"anomaly scan:   predict + anomalydetection over {anom.get('buckets_analyzed', 0)} buckets, "
+            f"anomaly scan:   {anom.get('method', 'forecast')} over {anom.get('buckets_analyzed', 0)} buckets, "
             f"{anom.get('forecast_breaches', 0)} band breach(es), "
             f"{anom.get('anomalous_buckets', 0)} anomalous bucket(s)"
         )
