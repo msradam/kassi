@@ -52,6 +52,6 @@ Type "./scripts/divine.sh"
 Enter
 Sleep 22s
 
-Type "# one agent, 12 tool calls across two MCP servers -- client 5xx explained by server-side telemetry, narrated as a tarot reading"
+Type "# one agent, 18 tool calls across two MCP servers -- client 5xx explained by server-side telemetry, narrated as a tarot reading"
 Enter
 Sleep 3s

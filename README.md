@@ -197,7 +197,7 @@ stateDiagram-v2
   tool to answer what k6 client-side cannot: a rollup (overview), a timeline (when it
   degraded), a by-endpoint breakdown (which route degraded), and the dominant server-side
   error (why). It synthesizes the actionable findings, so the run can say "POST /api/visits
-  regressed: 21% 5xx, p95 285ms vs 2ms baseline, cause 'database is locked'", which the k6
+  regressed: 45% 5xx, p95 285ms vs 2ms baseline, cause 'database is locked'", which the k6
   summary alone never shows. Override the rollup per run with `splunk_spl`.
 - `detect_anomalies` runs Splunk's own ML over the same window through the same
   `splunk_run_query` tool: `predict` forecasts the latency band and `anomalydetection`

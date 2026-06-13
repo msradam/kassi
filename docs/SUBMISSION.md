@@ -33,20 +33,24 @@ change (a git diff) or a plain-language intent and it:
    and runs it through the Grafana k6 MCP server,
 4. preflights the Splunk index (existence, event count, sourcetypes, version), then
    queries Splunk through the official Splunk MCP Server for the target's server-side
-   telemetry over the exact test window, and
+   telemetry over the exact test window, then runs Splunk's own `predict` and
+   `anomalydetection` over that window to locate the saturation onset statistically, and
 5. reports a combined client plus server verdict, with the model narrating each phase as a
    tarot reading and a provenance record of every upstream tool call.
 
 The driving agent (Claude Code, Cursor, any MCP client) never sees k6 or Splunk. It sees
 one tool, `step(action, inputs)`, and takes the workflow one move at a time.
 
-In a verified run against live Splunk, one agent orchestrated 12 tool calls across both
+In a verified run against live Splunk, one agent orchestrated 18 tool calls across both
 MCP servers: it grounded generation in the live k6 docs, authored the script with k6's own
-`generate_script` prompt, confirmed the `web` index on the official Splunk MCP Server
-(`access_json` sourcetype, Splunk 10.4.0), reported 200 client-side k6 requests (p95
-21.4 ms, 6% failed), then correlated them to 80 server-side events over the test window with
-7 5xx and 3 4xx at 21.25 ms average. The client failure rate is explained by server-side
-errors, correlated automatically, with every tool call on an audit ledger.
+`generate_script` prompt and repaired it from a real k6 validation error, confirmed the
+`web` index on the official Splunk MCP Server (`access_json` sourcetype, Splunk 10.4.0),
+drove 6666 client-side k6 requests (p95 280.92 ms, 15% failed), then correlated them to the
+server-side telemetry over the test window: the new `POST /api/visits` at 45.2% 5xx and p95
+285.59 ms against healthy baselines near 2 ms, root cause `database is locked` (990x), and
+Splunk's own `predict` + `anomalydetection` confirmed the saturation bucket statistically.
+The client failure rate is explained by the server-side errors, correlated automatically,
+with every tool call on an audit ledger.
 
 ## How we built it
 
@@ -69,8 +73,11 @@ errors, correlated automatically, with every tool call on an audit ledger.
   `splunk_preflight` verifies the target index and captures its event count, sourcetypes,
   and the Splunk version. `correlate` then builds an SPL error/latency rollup scoped to
   that window and calls the official `splunk_run_query` tool over the documented
-  `mcp-remote` bridge, authenticated with an encrypted Bearer token. Both Splunk phases
-  degrade gracefully to k6-only when not configured.
+  `mcp-remote` bridge, authenticated with an encrypted Bearer token. `detect_anomalies`
+  then runs Splunk's own `predict` (latency band forecast) and `anomalydetection` over the
+  same window, so the saturation onset is found by Splunk's ML rather than a fixed
+  threshold in kassi. All three Splunk phases degrade gracefully to k6-only when not
+  configured.
 - **Deterministic scaffold, model on top.** A deterministic `scaffold` phase composes a
   runnable k6 baseline from the OpenAPI schema with no model. The `generate_script` phase
   then has the model author the final script on top of it, guided by k6's own

@@ -113,14 +113,15 @@ scripted.
    event per request to the `web` index (`{path, method, status, response_time, db_time,
    error_message}`);
 2. drives kassi with **real k6** through the k6 MCP server against the app (~25 VUs, 25s);
-3. reads the regression back from Splunk via the four `correlate` queries.
+3. reads the regression back from Splunk via the four `correlate` queries, then confirms the
+   saturation onset with Splunk's own `predict` + `anomalydetection`.
 
 ```bash
 KASSI_LLM=anthropic envchain ai uv run python scripts/verify_petclinic.py
 ```
 
-A verified run: k6 client-side saw 4461 requests, p95 278 ms, 7% failed. Splunk server-side
-localized it: `POST /api/visits` at 21% 5xx and p95 285 ms while `/api/owners` and `/api/vets`
-stayed at 0% and ~2 ms, with the dominant error "database is locked" (308x). The verdict folds
-that in: `server-side regression: /api/visits p95 285ms, 21% 5xx, cause 'database is locked'`.
-That root cause is what k6 alone cannot see.
+A verified run: k6 client-side saw 6666 requests, p95 281 ms, 15% failed. Splunk server-side
+localized it: `POST /api/visits` at 45.2% 5xx and p95 285.59 ms while `/api/owners` and
+`/api/vets` stayed at 0% and ~2 ms, with the dominant error "database is locked" (990x). The
+verdict folds that in: `server-side regression: /api/visits p95 285.59ms, 45.2% 5xx, cause
+'database is locked'`. That root cause is what k6 alone cannot see.
