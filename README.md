@@ -85,6 +85,12 @@ than inventing them. Set `KASSI_LLM=anthropic` for the Claude Messages API inste
 (`claude-haiku-4-5`, needs `ANTHROPIC_API_KEY`). If the backend is unreachable, kassi runs the
 deterministic scaffold and a deterministic analysis, so a run never fails for lack of a model.
 
+The model is pluggable, both for the per-phase work and for *driving* the FSM (`kassi pilot`, or
+any MCP client). The orchestration, the audited Burr graph over MCP, is model-neutral, so the
+architecture scales with the model rather than depending on one. Granite 4.1 is the default
+because it proves the whole loop, drive, write, and audit, fits on a local 8B with no cloud
+dependency; swap in a larger or hosted model and nothing else changes.
+
 The Splunk step is optional: without `KASSI_SPLUNK_MCP_ENDPOINT` + `KASSI_SPLUNK_TOKEN`
 set, kassi skips correlation and runs k6-only.
 

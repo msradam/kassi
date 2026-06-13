@@ -84,7 +84,8 @@ SLIDES = [
         "kicker": "HOW IT WORKS  ·  ONE AUDITED STATE MACHINE",
         "title": "It closes the loop.",
         "body": [
-            "A local Granite model drives a Burr state machine over MCP, one phase at a time:",
+            "Any tool-calling model drives a Burr state machine over MCP, one phase at a time",
+            "(Granite 4.1 is the default: it proves the whole loop fits on a local 8B):",
             "",
             "→   Grafana k6 MCP Server drives real load at the changed endpoint",
             "→   the official Splunk MCP Server reads the server-side truth",

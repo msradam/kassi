@@ -152,6 +152,14 @@ Three layers of AI, kept deliberately narrow:
    published. The writer is not trusted on its own word. Keeping the work-phases deterministic
    and splitting writer from auditor keeps the blast radius of a bad model output small.
 
+The architecture separates **orchestration from the model**. The driver and the writer/auditor are
+behind a model-neutral surface (the MCP `step` tool; the `LLM` Protocol with Ollama and Anthropic
+backends), so the model is pluggable: any capable tool-calling model can drive and author, and the
+deterministic scaffold + ledger hold regardless. Granite 4.1 is the *default* because it proves the
+entire loop, drive, write, and audit, fits on a local 8B with no cloud dependency. Swap in a larger
+or hosted model and nothing else changes; the design scales with the model, it does not depend on
+one.
+
 ## Data flow between services, APIs, and components
 
 1. Driver calls `step(select_mode, …)`; kassi reads a git diff or scores an OpenAPI spec
