@@ -49,8 +49,11 @@ src/kassi/
     compose.py       pure-Python composer -> a single self-contained k6 scaffold
 tests/test_fsm.py    offline FSM tests (FakeUpstream + fake LLM)
 examples/petstore/   sample openapi.json for intent mode + tests
-examples/petclinic/  flawed demo target: healthy baseline + POST /api/visits (SQLite
-                     write-lock flaw); FastAPI app ships access logs to Splunk HEC
+examples/petclinic/  headline demo target: healthy baseline + flawed POST /api/visits
+                     (SQLite write-lock); FastAPI app ships access logs to Splunk HEC
+examples/{storefront,feed,gateway,orders}/  more demo targets spanning the load-failure
+                     taxonomy (latency/N+1, rising/soak, 429 throttling, downstream 504s);
+                     same access_json HEC telemetry. See the scenario matrix in README.
 scripts/             local Splunk helpers (see docs/SPLUNK_SETUP.md)
   seed_splunk.py        create index + HEC, ingest sample telemetry, verify the SPL
   dev_splunk_mcp.py     LOCAL DEV ONLY stdio MCP bridge to Splunk REST

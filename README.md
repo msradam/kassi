@@ -293,6 +293,24 @@ Every upstream call is on the hash-chained ledger and in `mcp_provenance`. See
 For a lighter reproduction without a target app, `scripts/verify_correlate_live.py` cans the
 k6 metrics and ingests sample telemetry, but still queries the real official Splunk MCP Server.
 
+## Demo scenarios
+
+`examples/` ships five target apps, each a healthy baseline plus one "new" endpoint with a
+distinct load-induced failure, so the suite spans the common regression classes (not just one
+trick). Each ships the same `access_json` telemetry to Splunk, so kassi correlates them
+unchanged; the failure only appears under concurrency.
+
+| App | New endpoint | Failure signature | What it exercises |
+| --- | --- | --- | --- |
+| `petclinic` | `POST /api/visits` | 5xx, constant — `database is locked` | correlation isolates the root-cause error |
+| `storefront` | `POST /api/checkout` | latency, **0 errors** (N+1 over a shared connection) | server-side `db_time`, invisible to the client error rate |
+| `feed` | `POST /api/events` | latency **rising over the run** (unbounded recompute) | `detect_anomalies`: the forecast band and anomalydetection catch the trend |
+| `gateway` | `GET /api/quote` | **4xx** 429 throttling (too-tight rate limit) | client-vs-server error split: "throttled, not broken" |
+| `orders` | `POST /api/order` | latency **+ 504 mix** (downstream cascade) | dependency root cause, resilience recommendation |
+
+Point kassi at any of them in intent or diff mode; `petclinic` is the headline diff-mode run
+below.
+
 ## Dashboard
 
 The `report` phase publishes each run (verdict, k6 client metrics, the server-side correlation,
