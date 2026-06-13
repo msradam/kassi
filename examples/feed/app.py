@@ -25,7 +25,6 @@ import ssl
 import threading
 import time
 import urllib.request
-from collections import Counter
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -124,23 +123,21 @@ def get_feed() -> list[dict]:
 
 @app.post("/api/events")
 def add_event(request: Request, event: dict) -> JSONResponse:
-    """New in this change: record an event and recompute trending. The recompute sorts the
-    entire unbounded in-memory log on every write, so per-request work grows with how much
-    traffic the test has already sent. Fine when serial or short; under load p95 creeps up."""
+    """New in this change: record an event into an unbounded store and rescan it to refresh
+    "trending". The store is never trimmed, so the rescan touches more rows on every write and
+    its cost grows with how much traffic the test has already sent. A short or serial test
+    looks fine; under sustained load the per-request time creeps up as the store grows, the
+    cumulative-degradation regression a soak reveals. The scan time is modeled as a bounded
+    delay proportional to the accumulated count (it stands in for an unindexed read over a
+    growing table); no CPU spin, so throughput stays up and the trend is the signal."""
     t0 = time.perf_counter()
     with _events_lock:
-        _events.append({"topic": str(event.get("topic", "general")), "weight": len(_events) % 7 + 1})
-        # recompute trending over the ENTIRE unbounded log on every write: several O(n)
-        # passes whose cost grows with how much traffic the test has already sent
-        counts = Counter(e["topic"] for e in _events)
-        scores = [e["weight"] / (1.0 + counts[e["topic"]]) for e in _events]
-        ranked = sorted(counts.items(), key=lambda kv: kv[1], reverse=True)[:10]
-        total, seen = sum(scores), len(_events)
+        _events.append({"topic": str(event.get("topic", "general"))})
+        seen = len(_events)
+    # rescan cost grows with the unbounded store (capped so the demo stays bounded)
+    time.sleep(min(0.12, seen * 2.5e-5))
     request.state.db_time = round((time.perf_counter() - t0) * 1000, 2)
-    return JSONResponse(
-        status_code=200,
-        content={"trending": [t for t, _ in ranked], "score": round(total, 2), "seen": seen},
-    )
+    return JSONResponse(status_code=200, content={"seen": seen})
 
 
 def main() -> None:

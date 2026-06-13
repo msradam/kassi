@@ -51,7 +51,7 @@
     "/api/events": {
       "post": {
         "summary": "Add Event",
-        "description": "New in this change: record an event and recompute trending. The recompute sorts the\nentire unbounded in-memory log on every write, so per-request work grows with how much\ntraffic the test has already sent. Fine when serial or short; under load p95 creeps up.",
+        "description": "New in this change: record an event into an unbounded store and rescan it to refresh\n\"trending\". The store is never trimmed, so the rescan touches more rows on every write and\nits cost grows with how much traffic the test has already sent. A short or serial test\nlooks fine; under sustained load the per-request time creeps up as the store grows, the\ncumulative-degradation regression a soak reveals. The scan time is modeled as a bounded\ndelay proportional to the accumulated count (it stands in for an unindexed read over a\ngrowing table); no CPU spin, so throughput stays up and the trend is the signal.",
         "operationId": "add_event_api_events_post",
         "requestBody": {
           "content": {
