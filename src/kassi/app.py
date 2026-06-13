@@ -295,25 +295,77 @@ async def validate_script(state: State) -> State:
     return state.update(validation_error=err, stage="failed_validation", mcp_calls=calls)
 
 
+def _run_timeout(duration: str) -> float:
+    """A generous ceiling for the k6 MCP run_script call: the test duration plus headroom for
+    provisioning, teardown, and result transfer. A run that exceeds this is treated as hung
+    (an authored script can wedge k6 so it never exits, and the MCP call would otherwise block
+    the whole pipeline forever)."""
+    d = duration.strip().lower()
+    try:
+        if d.endswith("ms"):
+            secs = float(d[:-2]) / 1000
+        elif d.endswith("m"):
+            secs = float(d[:-1]) * 60
+        elif d.endswith("s"):
+            secs = float(d[:-1])
+        else:
+            secs = float(d)
+    except ValueError:
+        secs = 30.0
+    return secs + 120.0
+
+
 @action(
-    reads=["generated_script", "plan", "mcp_calls"],
+    reads=["generated_script", "scaffold_script", "plan", "mcp_calls"],
     writes=["run_result", "run_started_at", "run_ended_at", "stage", "error", "mcp_calls"],
 )
 async def run_test(state: State) -> State:
-    """Execute the load test via the k6 MCP `run_script` tool (passing VUs + duration, which the tool needs since it ignores the script's own options) and parse the metrics from the summary."""
+    """Execute the load test via the k6 MCP `run_script` tool (passing VUs + duration, which the tool needs since it ignores the script's own options) and parse the metrics from the summary. Bounded by a timeout: if the authored script wedges k6 so the call never returns, fall back to running the deterministic scaffold once, so the pipeline never hangs."""
     started = time.time()
     vus, duration = _load_profile(state["plan"])
-    try:
-        payload = await call_upstream(
-            K6_SERVER, "run_script", {"script": state["generated_script"], "vus": vus, "duration": duration}
+    timeout = _run_timeout(duration)
+    script, scaffold = state["generated_script"], state["scaffold_script"]
+    calls = state["mcp_calls"]
+
+    async def _run(src: str):
+        return await asyncio.wait_for(
+            call_upstream(K6_SERVER, "run_script", {"script": src, "vus": vus, "duration": duration}),
+            timeout=timeout,
         )
+
+    try:
+        payload = await _run(script)
+        calls = _record(calls, K6_SERVER, "run_script", "ok")
+    except TimeoutError:
+        log.warning("run_test_timeout", timeout_s=round(timeout))
+        calls = _record(calls, K6_SERVER, "run_script", "timeout")
+        if scaffold and script != scaffold:
+            try:
+                payload = await _run(scaffold)
+                calls = _record(calls, K6_SERVER, "run_script", "ok")
+                log.info("run_test_scaffold_fallback")
+            except Exception as exc:
+                return state.update(
+                    run_result=None,
+                    stage="failed",
+                    error=f"k6 run timed out; scaffold fallback failed: {exc}",
+                    mcp_calls=_record(calls, K6_SERVER, "run_script", "error"),
+                )
+        else:
+            return state.update(
+                run_result=None,
+                stage="failed",
+                error=f"k6 run timed out after {round(timeout)}s",
+                mcp_calls=calls,
+            )
     except Exception as exc:
         return state.update(
             run_result=None,
             stage="failed",
             error=f"k6 MCP run failed: {exc}",
-            mcp_calls=_record(state["mcp_calls"], K6_SERVER, "run_script", "error"),
+            mcp_calls=_record(calls, K6_SERVER, "run_script", "error"),
         )
+
     ended = time.time()
     result = parse.parse_run(payload)
     log.info("run_test_ok", reqs=result.http_reqs, exit_code=result.exit_code)
@@ -323,7 +375,7 @@ async def run_test(state: State) -> State:
         run_ended_at=ended,
         stage="ran",
         error=None,
-        mcp_calls=_record(state["mcp_calls"], K6_SERVER, "run_script", "ok"),
+        mcp_calls=calls,
     )
 
 

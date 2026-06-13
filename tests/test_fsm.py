@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
 import pytest
+from burr.core import State
 from fastmcp import Client
 from theodosia import bind_upstream, mount
 from theodosia.testing import FakeUpstream
@@ -217,3 +219,34 @@ async def test_enforcement_refuses_illegal_first_step():
         payload = result.structured_content
     assert payload.get("error") == "invalid_transition"
     assert "select_mode" in payload.get("valid_next_actions", [])
+
+
+async def test_run_test_timeout_falls_back_to_scaffold(monkeypatch):
+    """A hung authored-script run must not block the pipeline: run_test times out and
+    re-runs the deterministic scaffold once, recording timeout then ok."""
+
+    async def fake_call_upstream(server, tool, args):
+        if args["script"] == "AUTHORED":
+            await asyncio.sleep(5)  # never returns within the timeout
+        return {
+            "success": True,
+            "exit_code": 0,
+            "metrics": {"http_reqs": {"count": 42}, "http_req_duration": {"p(95)": 10.0}},
+        }
+
+    monkeypatch.setattr(kassi_app, "call_upstream", fake_call_upstream)
+    monkeypatch.setattr(kassi_app, "_run_timeout", lambda _d: 0.05)
+
+    state = State(
+        {
+            "generated_script": "AUTHORED",
+            "scaffold_script": "SCAFFOLD",
+            "plan": {"test_taxonomy": "load"},
+            "mcp_calls": [],
+        }
+    )
+    result = await kassi_app.run_test(state)
+    assert result["stage"] == "ran"
+    assert result["run_result"]["http_reqs"] == 42  # the scaffold run's payload
+    statuses = [c["status"] for c in result["mcp_calls"] if c["tool"] == "run_script"]
+    assert statuses == ["timeout", "ok"]
