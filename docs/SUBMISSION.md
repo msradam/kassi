@@ -1,8 +1,8 @@
-# kassi: the AI agent that reads your diff before it pages you
+# kassi: the AI agent that tells your code's fortune
 
-> An AI agent that load-tests your code change, reads the server-side truth from Splunk, and
-> names the regression before it reaches production. Cassandra foresaw disaster and was never
-> believed; kassi's prophecy comes with proof.
+> It foresees what your next change will break in production, reads the proof from Splunk, and
+> warns you before it comes true. Cassandra foresaw disaster and was never believed; kassi's
+> prophecy comes with proof.
 
 **Elevator pitch.** Roughly 80% of production outages are self-inflicted, they trace back to a
 change. The warning is usually there; it just isn't believed, because a change's real impact
