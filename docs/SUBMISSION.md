@@ -112,6 +112,9 @@ audit ledger.
   test window, driven from a code change.
 - A durable, verifiable ledger of everything the agent did and everything it was refused.
 - A reproducible end-to-end run against the official Splunk MCP Server, not a mock.
+- The forecast runs on Splunk's own ML: the AI Toolkit's `StateSpaceForecast` over the test
+  window, invoked through the same `splunk_run_query` MCP tool, with the core `predict`
+  command as an automatic fallback so the phase works on any Splunk.
 
 ## What we learned
 
