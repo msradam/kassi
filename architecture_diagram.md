@@ -25,12 +25,15 @@ flowchart TB
         RT --> PF["splunk_preflight"]
         PF --> CO["correlate"]
         CO --> DA["detect_anomalies<br/>(AI Toolkit StateSpaceForecast + anomalydetection)"]
-        DA --> RP["report<br/>(model narration)"]
+        DA --> AN["analyze<br/>(writer: cited analysis + remediation diff)"]
+        AN --> SCR["screen<br/>(auditor: Guardian groundedness)"]
+        SCR --> RP["report<br/>(narration; publishes run + step trace)"]
         LEDGER[("immutable<br/>hash-chained ledger<br/>steps + refusals")]
     end
 
-    subgraph AI["AI / models"]
-        LLM["model (local Granite 4.1, or Claude)<br/>authors the script · grounded analysis · narration"]
+    subgraph AI["AI / models (local Granite 4.1 family)"]
+        LLM["writer (Granite 4.1, or Claude)<br/>script, grounded analysis, remediation, narration"]
+        GUARD["auditor (Granite Guardian 4.1)<br/>groundedness check on the analysis"]
     end
 
     subgraph Upstreams["Upstream MCP servers (hidden from the driver)"]
@@ -40,6 +43,7 @@ flowchart TB
 
     subgraph Splunk["Splunk Enterprise"]
         IDX[("indexed target<br/>telemetry")]
+        RUNIDX[("index=kassi_runs<br/>kassi:run + kassi:step<br/>(the agent's own walk)")]
     end
 
     TARGET["Target service<br/>(HTTP API under test)"]
@@ -50,7 +54,8 @@ flowchart TB
     SC -->|deterministic compose| GS
     GS -->|k6 generate_script prompt| K6
     GS -->|HTTP| LLM
-    RP -->|HTTP| LLM
+    AN -->|HTTP| LLM
+    SCR -->|HTTP| GUARD
     VS -->|MCP call_upstream| K6
     RT -->|MCP call_upstream| K6
     K6 -->|generated k6 load| TARGET
@@ -60,6 +65,7 @@ flowchart TB
     DA -->|MCP call_upstream| SPL
     SPL -->|SPL over test window| IDX
     RP -->|final verdict| A
+    RP -.->|HEC: run summary + per-phase step trace| RUNIDX
 ```
 
 ## System diagram (ASCII)
@@ -75,19 +81,19 @@ flowchart TB
   │   select_mode → read_diff / parse_intent → doc_lookup → scaffold         │
   │        → generate_script → validate_script ⇄ fix_script  (bounded loop)  │
   │        → run_test → splunk_preflight → correlate → detect_anomalies      │
-  │        → report                                                          │
+  │        → analyze (writer) → screen (auditor) → report                    │
   │                                                                          │
   │   every step + every refusal ──▶ immutable hash-chained ledger           │
   └──┬─────────────────┬──────────────────────────┬──────────────────────────┘
      │ HTTP            │ MCP call_upstream         │ MCP call_upstream
      ▼                 ▼                           ▼
  ┌──────────────┐ ┌────────────────────┐ ┌────────────────────────────────┐
- │ model        │ │ Grafana k6 MCP     │ │ Splunk MCP Server  (Splunk AI) │
+ │ models       │ │ Grafana k6 MCP     │ │ Splunk MCP Server  (Splunk AI) │
  │ Granite 4.1  │ │ generate_script    │ │ splunk_run_query · get_info ·  │
- │ (local) or   │ │ prompt · docs ·    │ │ get_index_info · get_metadata ·│
- │ Claude API   │ │ best_practices ·   │ │ StateSpaceForecast ·           │
- │ script +     │ │ validate · run     │ │ anomalydetection (token-auth)  │
- │ analysis     │ └─────────┬──────────┘ └───────────────┬────────────────┘
+ │ writer +     │ │ prompt · docs ·    │ │ get_index_info · get_metadata ·│
+ │ Guardian 4.1 │ │ best_practices ·   │ │ StateSpaceForecast ·           │
+ │ auditor      │ │ validate · run     │ │ anomalydetection (token-auth)  │
+ │ (local)      │ └─────────┬──────────┘ └───────────────┬────────────────┘
  └──────────────┘           │ generated k6 load          │ windowed SPL
                             ▼                            ▼
                     ┌──────────────┐    logs/    ┌────────────────────┐
@@ -98,7 +104,8 @@ flowchart TB
   Flow: driver drives the FSM by name → kassi hides both upstream MCP servers →
   k6 drives load at the target → the target's telemetry lands in Splunk →
   kassi reads it back over the exact test window via the Splunk MCP Server →
-  the model narrates a combined client + server verdict back to the driver.
+  the writer model explains it, a second model audits the explanation →
+  kassi returns the verdict and publishes the run plus its own step trace to Splunk.
 ```
 
 ## How the application interacts with Splunk
@@ -120,19 +127,27 @@ fixed threshold in kassi. Connection is the official `mcp-remote` stdio bridge t
 streamable-HTTP endpoint, authenticated with an encrypted Bearer token. Every Splunk and
 k6 tool call is recorded to the report's `mcp_provenance` block.
 
+After `report`, kassi also writes *back* to Splunk over HEC: a `kassi:run` summary event and
+one `kassi:step` event per executed state-machine phase (the agent's own walk), both keyed by
+Burr's `app_id`. So the agent's execution is itself observable in Splunk, alongside the target
+it tested, and the dashboard can render how the verdict was reached, step by step.
+
 ## How AI models and agents are integrated
 
-Two layers of AI, kept deliberately narrow:
+Three layers of AI, kept deliberately narrow:
 
 1. **The driving agent** (Claude Code or any MCP client) decides which workflow step to
    take next. It sees only kassi's single `step` tool. kassi's state machine refuses any
    illegal step and returns the legal next actions, so the agent's autonomy is bounded by
    construction and fully audited.
-2. **A model** (a local IBM Granite 4.1 model by default, or Claude) authors the k6 script on
-   top of the deterministic scaffold, writes a cited analysis grounded on the run's evidence,
-   and narrates the run. It never writes SPL; pure Python composes the correlation query, and
-   the `scaffold` is the known-good fallback. This keeps the
-   work-phases deterministic and the blast radius of a bad model output small.
+2. **A writer model** (a local IBM Granite 4.1 model by default, or Claude) authors the k6
+   script on top of the deterministic scaffold, writes a cited analysis grounded on the run's
+   evidence, proposes the remediation diff, and narrates the run. It never writes SPL; pure
+   Python composes the correlation query, and the `scaffold` is the known-good fallback.
+3. **An auditor model** (IBM Granite Guardian 4.1, the `screen` phase) independently judges
+   whether the writer's analysis is grounded in the evidence it cites, before the verdict is
+   published. The writer is not trusted on its own word. Keeping the work-phases deterministic
+   and splitting writer from auditor keeps the blast radius of a bad model output small.
 
 ## Data flow between services, APIs, and components
 
@@ -153,9 +168,13 @@ Two layers of AI, kept deliberately narrow:
 8. `detect_anomalies` calls the **Splunk MCP Server** again with the AI Toolkit's
    `StateSpaceForecast` (core `predict` as a fallback) and `anomalydetection` over the same
    window, so Splunk's own ML locates the anomaly.
-9. `report` has the model write a grounded, cited analysis and narrate the run, then emits a
-   combined client + server verdict to the driver (with the `mcp_provenance` record of every
-   upstream tool call) and publishes the run to Splunk for the dashboard.
-10. Every transition and every refusal is written to Theodosia's immutable, hash-chained
+9. `analyze` has the writer model produce the grounded, cited analysis and (in diff mode) the
+   remediation diff.
+10. `screen` has the auditor model (Granite Guardian 4.1) judge the analysis for groundedness;
+    the pass/fail is sealed to the report.
+11. `report` emits the combined client + server verdict to the driver (with the `mcp_provenance`
+    record of every upstream tool call) and publishes to Splunk over HEC: a `kassi:run` summary
+    and one `kassi:step` event per phase (the agent's state-machine walk, keyed by `app_id`).
+12. Every transition and every refusal is written to Theodosia's immutable, hash-chained
     ledger; `kassi verify` confirms it has not been tampered with.
 ```

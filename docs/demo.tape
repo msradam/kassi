@@ -22,7 +22,7 @@ Type "clear" Enter
 Show
 
 Sleep 500ms
-Type "# kassi: divinate your stack's performance -- a load test, explained by Splunk telemetry"
+Type "# kassi: divines disaster, crafts the cure -- an AI agent that finds the regression in Splunk and writes the fix"
 Enter
 Sleep 900ms
 Type "# the workflow is a Burr state machine served over MCP -- only graph edges are legal moves"

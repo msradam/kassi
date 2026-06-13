@@ -33,13 +33,19 @@ src/kassi/
   app.py             THE FSM: async @action functions + build_application() + mount();
                      doc_lookup, scaffold, generate_script, fix_script (validation loop),
                      splunk_preflight, correlate (4 queries),
-                     detect_anomalies (StateSpaceForecast/predict + anomalydetection), report-narration
+                     detect_anomalies (StateSpaceForecast/predict + anomalydetection),
+                     analyze (writer: analysis + remediation), screen (auditor: Guardian
+                     groundedness), report (narration + publish run & step trace)
   cli.py             `kassi` console command (Theodosia build_cli); loads .env; warm-k6
   upstream.py        k6 + splunk upstream MCP configs; splunk_configured()
   k6gen.py           fetch_k6_generation_guidance(): k6 MCP generate_script prompt + best_practices
   state.py           Pydantic models (Endpoint, RunResult); MAX_FIX_ATTEMPTS
   parse.py           pure helpers: diff->endpoints, intent scoring, k6 stdout/doc parsers,
                      build_correlation_queries + summarize_findings, generation helpers
+  analysis.py        gather_evidence + compose_analysis (deterministic fallback) + recommend
+  remediate.py       SEARCH/REPLACE edit -> apply -> ast validate -> difflib unified diff
+  guardian.py        Granite Guardian 4.1 groundedness screen (the `screen` phase auditor)
+  publish.py         ship kassi:run + per-phase kassi:step events to Splunk HEC (keyed by app_id)
   llm.py             OllamaLLM + AnthropicLLM clients, LLM Protocol, make_llm() factory
   arcana.py          theming only: phase -> Major Arcana card; kept out of state/report
   githost.py         git diff via subprocess (the only non-MCP shell-out kassi keeps)
@@ -73,9 +79,15 @@ The state machine lives entirely in `app.py`. Flow:
 select_mode ─diff──→ read_diff → extract_endpoints ┐
             └intent─→ parse_intent ────────────────┴→ doc_lookup → scaffold → generate_script
 generate_script → validate_script ─needs_fix─→ fix_script → validate_script   (bounded loop)
-validate_script → run_test ─splunk?─→ splunk_preflight → correlate → detect_anomalies → report
-                          └─else──────────────────────────────────→ report   (also on validation give-up)
+validate_script → run_test ─splunk?─→ splunk_preflight → correlate → detect_anomalies ┐
+                          └─else──────────────────────────────────────────────────┐  │
+(also on validation give-up) ─────────────────────────────────────→ analyze → screen → report
 ```
+
+Every path converges on `analyze` (writer: Granite 4.1 composes the cited analysis and, in diff
+mode, the remediation diff) → `screen` (auditor: Granite Guardian 4.1 judges the analysis for
+groundedness, non-blocking) → `report`. All the failure/no-splunk edges route to `analyze`, so
+the analysis, the groundedness screen, and the publish always run.
 
 `scaffold` composes a deterministic k6 baseline (no model); `generate_script` has the model
 author the final script on top of it using k6's `generate_script` MCP prompt (fetched via
@@ -86,8 +98,11 @@ by `MAX_FIX_ATTEMPTS`, then falls back to the scaffold. An unvalidated script ne
 `run_test`.
 `doc_lookup` (k6 docs) and `splunk_preflight` (Splunk index/metadata/info) are MCP-native
 phases: both use `safe_upstream` (never block the run) and append to the `mcp_calls`
-provenance list that `report` surfaces as `mcp_provenance`. `report` also has the model
-narrate the run (a tarot reading), falling back to the static omens when the model is absent.
+provenance list (each entry tagged with its `phase`) that `report` surfaces as `mcp_provenance`.
+`report` narrates the run (a tarot reading, falling back to static omens when the model is
+absent), assembles the per-phase step trace from the phase-tagged provenance, and publishes both
+the run summary and the step trace to Splunk via `publish.py`, keyed by Burr's `app_id` (read from
+`ApplicationContext.get()`, not a kassi-minted id).
 
 Control flow is driven by a single `stage` string in state, plus a few flags
 (`mode`, `splunk_enabled`, `fix_attempts`). Transitions are gated with
@@ -137,11 +152,13 @@ Theodosia's `kassi doctor --runtime` enforces most of these; run it after edits.
   pipeline must always work with the model backend (Ollama/Granite or Anthropic) unreachable.
 - **The model never writes SPL.** `parse.build_correlation_spl` composes the
   correlation query in pure Python; keep it that way.
-- **The analysis is grounded, not free-form.** `report` builds an evidence list (`analysis.py`)
-  and passes it to the model as documents. The default model, IBM `granite4.1:8b`, grounds on
-  them via its document role (`llm.OllamaLLM` emits `document_<source>` messages); Anthropic
-  inlines them. `analysis.compose_analysis` is the deterministic fallback. Keep evidence facts
-  paired with their source tool so citations stay accurate.
+- **The analysis is grounded, not free-form, and independently screened.** `analyze` builds an
+  evidence list (`analysis.py`) and passes it to the writer model as documents. The default
+  model, IBM `granite4.1:8b`, grounds on them via its document role (`llm.OllamaLLM` emits
+  `document_<source>` messages); Anthropic inlines them. `analysis.compose_analysis` is the
+  deterministic fallback. Keep evidence facts paired with their source tool so citations stay
+  accurate. The `screen` phase then re-checks the analysis against that same evidence with
+  Granite Guardian 4.1 (`guardian.py`); the writer is never trusted on its own word.
 - Sample request data in the scaffold is derived best-effort from the OpenAPI schema.
   It only has to exercise the endpoint shape, not be semantically perfect.
 

@@ -1,8 +1,8 @@
-<p align="center"><img src="docs/assets/cover.png" alt="kassi: divinate your stack's performance" width="820" /></p>
+<p align="center"><img src="docs/assets/cover.png" alt="kassi: divines disaster, crafts the cure" width="820" /></p>
 
 # kassi
 
-> Divinate your stack's performance.
+> Divines disaster, crafts the cure.
 
 Closed-loop observability, driven by change. Most production outages are self-inflicted by a
 change, and the warning usually exists but can't be proven before it ships. kassi closes that
@@ -47,7 +47,7 @@ Splunk preflight and correlation) against a live Splunk.
 | | |
 | --- | --- |
 | ![state machine](docs/assets/shot-render.png) | ![the major arcana](docs/assets/shot-arcana.png) |
-| **`kassi render`**: 11 actions, legal edges only | **`kassi arcana`**: a card per phase |
+| **`kassi render`**: the full state machine, legal edges only | **`kassi arcana`**: a card per phase |
 | ![doctor](docs/assets/shot-doctor.png) | ![correlate](docs/assets/shot-correlate.png) |
 | **`kassi doctor --runtime`**: graph + governance checks | **a full run**: k6 + Splunk correlated, every tool call logged |
 
@@ -155,23 +155,25 @@ stateDiagram-v2
     select_mode --> read_diff: diff mode
     select_mode --> parse_intent: intent mode
     read_diff --> extract_endpoints
-    read_diff --> report: failed
+    read_diff --> analyze: failed
     extract_endpoints --> doc_lookup
     parse_intent --> doc_lookup
-    parse_intent --> report: failed
+    parse_intent --> analyze: failed
     doc_lookup --> scaffold
     scaffold --> generate_script
-    scaffold --> report: no endpoints
+    scaffold --> analyze: no endpoints
     generate_script --> validate_script
     validate_script --> fix_script: needs fix
     fix_script --> validate_script
     validate_script --> run_test: valid / scaffold
-    validate_script --> report: gave up
+    validate_script --> analyze: gave up
     run_test --> splunk_preflight: splunk enabled
-    run_test --> report: k6-only / failed
+    run_test --> analyze: k6-only / failed
     splunk_preflight --> correlate
     correlate --> detect_anomalies
-    detect_anomalies --> report
+    detect_anomalies --> analyze
+    analyze --> screen
+    screen --> report
     report --> [*]
 ```
 
@@ -214,15 +216,23 @@ stateDiagram-v2
   buckets. The saturation onset is found by Splunk's ML, not by a fixed threshold in kassi,
   and the forecast band and anomalous buckets fold into the verdict. Non-blocking, like the
   other Splunk phases.
-- `report` produces, from the recorded facts: a practical **analysis** (summary, affected
-  endpoints, root cause, evidence with a source citation per fact, and a recommendation),
-  grounded on the evidence documents so it stays to the measured numbers; a **proposed
-  remediation** (a minimal unified diff that fixes the root cause, written from the diff that
-  introduced it, in diff mode) for human review; and the tarot **narration**, one line per
-  phase. All fall back to deterministic text when the model is absent. Every upstream tool call
-  is logged to `mcp_provenance`, and the run is published to Splunk for the dashboard. The
-  work-phases stay deterministic; the model authors only the script, the analysis, the
-  remediation, and the narration, never the SPL.
+- `analyze` is the **writer** phase: the model produces, from the recorded facts, a practical
+  **analysis** (summary, affected endpoints, root cause, evidence with a source citation per
+  fact, and a recommendation), grounded on the evidence documents so it stays to the measured
+  numbers; and, in diff mode, a **proposed remediation** (a minimal unified diff that fixes the
+  root cause, written from the diff that introduced it) for human review. Both fall back to
+  deterministic text when the model is absent.
+- `screen` is the **auditor** phase: a separate **Granite Guardian 4.1** model judges whether
+  the analysis is grounded in the evidence it cites (any claim unsupported by or contradicting
+  the telemetry), and the pass/fail is sealed to the report. The writer is checked by a second
+  model, not trusted on its own word. Non-blocking: skipped when Guardian is off.
+- `report` assembles the combined client plus server verdict and the tarot **narration** (one
+  line per phase, deterministic omens when the model is absent). Every upstream tool call is
+  logged to `mcp_provenance`. The run is published to Splunk twice over: a `kassi:run` summary,
+  and the agent's own **state-machine walk** as one `kassi:step` event per phase (keyed by Burr's
+  `app_id`), so the dashboard shows not just what the change did but how the agent reached the
+  verdict. The model authors only the script, the analysis, the remediation, and the narration,
+  never the SPL.
 
 ## The Major Arcana
 
@@ -243,6 +253,8 @@ Each phase is a card the agent turns. Run `kassi arcana` for the full spread.
 | The Hermit (IX) | `splunk_preflight` | a lantern into the index before the reading |
 | The Lovers (VI) | `correlate` | client and server joined over one window |
 | The Star (XVII) | `detect_anomalies` | Splunk's own forecast is cast; where the load breaches the band is revealed |
+| The Sun (XIX) | `analyze` | the reading is made plain: cause, evidence, and the cure laid bare |
+| The Hanged Man (XII) | `screen` | seen again through another's eyes: the reading is judged grounded, or not |
 | Judgement (XX) | `report` | the verdict is spoken and sealed to the ledger |
 | The World (XXI) | the ledger | the cycle closes: an immutable, hash-chained record |
 | The Devil (XV) | a refusal | you are bound: only the legal moves are permitted |
@@ -326,19 +338,22 @@ uv run python scripts/verify_scenario.py feed   # or petclinic | storefront | ga
 
 <p align="center"><img src="docs/assets/shot-dashboard.png" alt="kassi dashboard: change impact read from Splunk" width="820" /></p>
 
-The `report` phase publishes each run (verdict, k6 client metrics, the server-side correlation,
-the forecast, the root cause) to `index=kassi_runs` over HEC, so the client-and-server join lives
-in a Splunk dashboard, not just the terminal. The agent stays CLI/MCP; Splunk is the reporting
-surface. Provision it once:
+The `report` phase publishes each run to `index=kassi_runs` over HEC: a `kassi:run` summary
+(verdict, k6 client metrics, the server-side correlation, the forecast, the root cause) and,
+because the agent's own execution is telemetry too, one `kassi:step` event per state-machine
+phase, the agent's walk from The Fool to Judgement, keyed by Burr's `app_id`. So the dashboard
+shows both what the change did and how the agent reached the verdict. The agent stays CLI/MCP;
+Splunk is the reporting surface. Provision it once:
 
 ```bash
 uv run python scripts/setup_dashboard.py   # creates the index, an HEC token, and the dashboard
 # paste the printed KASSI_HEC_TOKEN into .env, then every run self-publishes
 ```
 
-The dashboard (`docs/dashboard/kassi_overview.xml`) shows the latest verdict, k6 vs server-side
-p95, p95 across runs, server-side errors by endpoint, and a run-history table. Gated on
-`KASSI_HEC_TOKEN`: with it unset, runs simply don't publish.
+The dashboard (`docs/dashboard/kassi_overview.xml`) shows the latest verdict, the agent's
+state-machine walk for that run (each phase, its outcome, and the tool calls it made), step
+outcomes across runs, k6 vs server-side p95, p95 across runs, server-side errors by endpoint,
+and a run-history table. Gated on `KASSI_HEC_TOKEN`: with it unset, runs simply don't publish.
 
 ## Development
 

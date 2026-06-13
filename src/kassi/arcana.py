@@ -59,7 +59,7 @@ def adorn(text: str) -> str:
 LEDGER = ("XXI", "The World", "The cycle closes: an immutable, hash-chained record.")
 REFUSAL = ("XV", "The Devil", "You are bound: only the legal moves are permitted.")
 
-TAGLINE = "Divinate your stack's performance."
+TAGLINE = "Divines disaster, crafts the cure."
 
 
 def reading(verdict: str) -> str:
