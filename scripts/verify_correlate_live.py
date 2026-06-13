@@ -164,9 +164,18 @@ async def main() -> None:
     print("splunk_enabled: ", report["splunk_enabled"])
     print("k6 http_reqs:   ", report["run_result"]["http_reqs"])
     corr = report["correlation"]
-    print("correlation SPL:", corr["spl"])
+    rollup = (corr.get("queries") or {}).get("rollup") or {}
+    print("correlation SPL:", rollup.get("spl"))
     print("correlation OK: ", corr["available"])
-    print("server-side rows:", json.dumps(corr["rows"]))
+    print("server-side rows:", json.dumps(rollup.get("rows")))
+    anom = report.get("anomalies") or {}
+    if anom:
+        print(
+            "anomaly scan:    "
+            f"predict + anomalydetection over {anom.get('buckets_analyzed', 0)} buckets, "
+            f"{anom.get('forecast_breaches', 0)} band breach(es), "
+            f"{anom.get('anomalous_buckets', 0)} anomalous bucket(s)"
+        )
 
     prov = report["mcp_provenance"]
     print("k6 doc refs:    ", [r["slug"] for r in prov["k6_doc_refs"]])
