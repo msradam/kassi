@@ -10,8 +10,8 @@ Flow:
     select_mode ─diff──→ read_diff → extract_endpoints ┐
                 └intent─→ parse_intent ────────────────┴→ doc_lookup → scaffold → generate_script
     generate_script → validate_script ─needs_fix─→ fix_script → validate_script  (bounded loop)
-    validate_script → run_test ─splunk?─→ splunk_preflight → correlate → report
-                              └─else──────────────────────────────────→ report  (also on give-up)
+    validate_script → run_test ─splunk?─→ splunk_preflight → correlate → detect_anomalies → report
+                              └─else──────────────────────────────────────────────────────→ report  (also on give-up)
 
 ``scaffold`` composes a deterministic k6 baseline from the OpenAPI spec; ``generate_script``
 then has the model author the final script on top of it, guided by k6's own
@@ -19,8 +19,9 @@ then has the model author the final script on top of it, guided by k6's own
 an explicit gate: on a validation failure ``fix_script`` repairs the script from the k6 error
 (real stderr + issues), bounded by ``MAX_FIX_ATTEMPTS``, then falls back to the deterministic
 scaffold. So the model never produces an unvalidated script that reaches ``run_test``.
-``doc_lookup`` (k6 MCP docs) and ``splunk_preflight`` (Splunk index/metadata/info) are
-MCP-native phases: both degrade gracefully via ``safe_upstream`` and record every upstream
+``doc_lookup`` (k6 MCP docs), ``splunk_preflight`` (Splunk index/metadata/info), and
+``detect_anomalies`` (Splunk's own ``predict`` + ``anomalydetection`` over the test window)
+are MCP-native phases: all degrade gracefully via ``safe_upstream`` and record every upstream
 tool call to ``mcp_calls`` for the report's provenance. ``report`` narrates the run with the
 model, themed as a tarot reading (falling back to the static omens when the model is absent).
 """
@@ -403,11 +404,52 @@ async def correlate(state: State, splunk_spl: str = "") -> State:
 
 
 @action(
+    reads=["splunk_index", "run_started_at", "run_ended_at", "correlation", "mcp_calls"],
+    writes=["anomalies", "correlation", "mcp_calls", "stage"],
+)
+async def detect_anomalies(state: State) -> State:
+    """Run Splunk's own ML over the test window via the Splunk MCP `splunk_run_query` tool: `predict` forecasts the latency band and flags where the load breached it, and `anomalydetection` flags statistically outlying buckets. This is the saturation onset found statistically, independent of the fixed error thresholds. Non-blocking: degrades to no anomalies when Splunk is unavailable."""
+    earliest = state["run_started_at"] or (time.time() - 300)
+    latest = state["run_ended_at"] or time.time()
+    queries = parse.build_anomaly_queries(state["splunk_index"], earliest, latest)
+
+    calls = state["mcp_calls"]
+    out: dict[str, Any] = {}
+    rows_by_query: dict[str, list] = {}
+    available = False
+    for name, spl in queries.items():
+        result = await safe_upstream(
+            "splunk_ml", SPLUNK_SERVER, "splunk_run_query", {"query": spl}, expect="dict"
+        )
+        calls = _record(calls, SPLUNK_SERVER, "splunk_run_query", result.status)
+        rows = parse.summarize_correlation(result.data)
+        out[name] = {"spl": spl, "rows": rows}
+        rows_by_query[name] = rows
+        available = available or result.usable
+
+    summary = parse.summarize_anomalies(rows_by_query.get("forecast", []), rows_by_query.get("anomalies", []))
+    anomalies = {"available": available, "queries": out, **summary}
+
+    correlation = dict(state["correlation"] or {})
+    findings = dict(correlation.get("findings") or {})
+    findings["anomaly"] = summary
+    correlation["findings"] = findings
+    log.info(
+        "detect_anomalies_done",
+        available=available,
+        breaches=summary["forecast_breaches"],
+        buckets=summary["anomalous_buckets"],
+    )
+    return state.update(anomalies=anomalies, correlation=correlation, mcp_calls=calls, stage="detected")
+
+
+@action(
     reads=[
         "endpoints",
         "plan",
         "run_result",
         "correlation",
+        "anomalies",
         "validation_error",
         "error",
         "mode",
@@ -432,6 +474,7 @@ async def report(state: State) -> State:
         "run_result": state["run_result"],
         "splunk_enabled": state["splunk_enabled"],
         "correlation": state["correlation"],
+        "anomalies": state["anomalies"],
         "mcp_provenance": {
             "tool_calls": state["mcp_calls"],
             "k6_doc_refs": state["doc_refs"],
@@ -506,6 +549,13 @@ def _phase_facts(state: State, verdict: str) -> str:
         if te:
             detail += f"; dominant server error '{te.get('error_message')}' ({te.get('count')}x)"
         lines.append(f"- The Lovers (correlate): {detail}")
+        if an := (state["anomalies"] or {}):
+            lines.append(
+                f"- The Star (detect_anomalies): predict forecast p95 {an.get('forecast_p95_ms')}ms "
+                f"(peak {an.get('peak_p95_ms')}ms over {an.get('buckets_analyzed', 0)} buckets); "
+                f"anomalydetection flagged {an.get('anomalous_buckets', 0)} anomalous bucket(s), "
+                f"{an.get('forecast_breaches', 0)} band breach(es)"
+            )
     lines.append(f"- Judgement (report): verdict = {verdict}")
     return "\n".join(lines)
 
@@ -515,7 +565,7 @@ def _omen_fallback(state: State, verdict: str) -> str:
     if state["run_result"]:
         ran.append("run_test")
     if state["splunk_enabled"]:
-        ran += ["splunk_preflight", "correlate"]
+        ran += ["splunk_preflight", "correlate", "detect_anomalies"]
     ran.append("report")
     lines = []
     for phase in ran:
@@ -532,10 +582,10 @@ async def _narrate(state: State, verdict: str) -> str:
     try:
         text = await asyncio.to_thread(make_llm().generate, system=_NARRATION_SYSTEM, user=facts)
         if text and text.strip():
-            return text.strip()
+            return arcana.adorn(text.strip())
     except LLMError as exc:
         log.warning("narration_llm_failed", error=str(exc))
-    return _omen_fallback(state, verdict)
+    return arcana.adorn(_omen_fallback(state, verdict))
 
 
 def build_application():
@@ -554,6 +604,7 @@ def build_application():
             run_test=run_test,
             splunk_preflight=splunk_preflight,
             correlate=correlate,
+            detect_anomalies=detect_anomalies,
             report=report,
         )
         .with_transitions(
@@ -576,7 +627,8 @@ def build_application():
             ("run_test", "report", Condition.expr("stage == 'ran' and not splunk_enabled")),
             ("run_test", "report", Condition.expr("stage == 'failed'")),
             ("splunk_preflight", "correlate", Condition.expr("stage == 'preflighted'")),
-            ("correlate", "report", Condition.expr("stage == 'correlated'")),
+            ("correlate", "detect_anomalies", Condition.expr("stage == 'correlated'")),
+            ("detect_anomalies", "report", Condition.expr("stage == 'detected'")),
         )
         .with_state(
             stage="new",
@@ -601,6 +653,7 @@ def build_application():
             run_ended_at=None,
             splunk_preflight=None,
             correlation=None,
+            anomalies=None,
             mcp_calls=[],
             report=None,
             error=None,

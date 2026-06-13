@@ -32,7 +32,8 @@ src/kassi/
   __init__.py        exports build_application
   app.py             THE FSM: async @action functions + build_application() + mount();
                      doc_lookup, scaffold, generate_script, fix_script (validation loop),
-                     splunk_preflight, correlate (4 queries), report-narration
+                     splunk_preflight, correlate (4 queries),
+                     detect_anomalies (predict + anomalydetection), report-narration
   cli.py             `kassi` console command (Theodosia build_cli); loads .env; warm-k6
   upstream.py        k6 + splunk upstream MCP configs; splunk_configured()
   k6gen.py           fetch_k6_generation_guidance(): k6 MCP generate_script prompt + best_practices
@@ -69,7 +70,7 @@ The state machine lives entirely in `app.py`. Flow:
 select_mode ─diff──→ read_diff → extract_endpoints ┐
             └intent─→ parse_intent ────────────────┴→ doc_lookup → scaffold → generate_script
 generate_script → validate_script ─needs_fix─→ fix_script → validate_script   (bounded loop)
-validate_script → run_test ─splunk?─→ splunk_preflight → correlate → report
+validate_script → run_test ─splunk?─→ splunk_preflight → correlate → detect_anomalies → report
                           └─else──────────────────────────────────→ report   (also on validation give-up)
 ```
 
@@ -154,10 +155,11 @@ and classifies the result). The driving agent never sees these servers.
 - **splunk** is configured only when `KASSI_SPLUNK_MCP_ENDPOINT` and
   `KASSI_SPLUNK_TOKEN` are set. `select_mode` records `splunk_enabled =
   splunk_configured()`; the graph branches on it, and both `splunk_preflight` and
-  `correlate` degrade gracefully (via `safe_upstream`) when absent. kassi calls four
+  `correlate` degrade gracefully (via `safe_upstream`) when absent. kassi calls the
   Splunk tools: `splunk_get_info` + `splunk_get_index_info` + `splunk_get_metadata`
-  (splunk_preflight) and `splunk_run_query` x4 (correlate runs a rollup, timeline,
-  by-path, and root-cause query, then `summarize_findings` synthesizes the verdict). The
+  (splunk_preflight) and `splunk_run_query` x6 (correlate runs a rollup, timeline,
+  by-path, and root-cause query, then `summarize_findings` synthesizes the verdict;
+  detect_anomalies adds `predict` + `anomalydetection` over the same window). The
   official server is reached
   through `npx mcp-remote <endpoint> --header "Authorization: Bearer <token>"`; this is
   the documented official client transport. `KASSI_SPLUNK_INSECURE=1` adds

@@ -162,7 +162,8 @@ stateDiagram-v2
     run_test --> splunk_preflight: splunk enabled
     run_test --> report: k6-only / failed
     splunk_preflight --> correlate
-    correlate --> report
+    correlate --> detect_anomalies
+    detect_anomalies --> report
     report --> [*]
 ```
 
@@ -198,6 +199,11 @@ stateDiagram-v2
   error (why). It synthesizes the actionable findings, so the run can say "POST /api/visits
   regressed: 21% 5xx, p95 285ms vs 2ms baseline, cause 'database is locked'", which the k6
   summary alone never shows. Override the rollup per run with `splunk_spl`.
+- `detect_anomalies` runs Splunk's own ML over the same window through the same
+  `splunk_run_query` tool: `predict` forecasts the latency band and `anomalydetection`
+  flags statistically outlying buckets. The saturation onset is found by Splunk, not by a
+  fixed threshold in kassi, and the forecast band and anomalous buckets fold into the
+  verdict. Non-blocking, like the other Splunk phases.
 - `report` has the model narrate the run as a tarot reading, one line per phase from
   the recorded facts, falling back to the static omens when the model is absent. Every
   upstream tool call is logged to `mcp_provenance`. The work-phases stay deterministic;
@@ -221,6 +227,7 @@ Each phase is a card the agent turns. Run `kassi arcana` for the full spread.
 | The Tower (XVI) | `run_test` | load strikes the structure; what breaks is revealed |
 | The Hermit (IX) | `splunk_preflight` | a lantern into the index before the reading |
 | The Lovers (VI) | `correlate` | client and server joined over one window |
+| The Star (XVII) | `detect_anomalies` | Splunk's own forecast is cast; where the load breaches the band is revealed |
 | Judgement (XX) | `report` | the verdict is spoken and sealed to the ledger |
 | The World (XXI) | the ledger | the cycle closes: an immutable, hash-chained record |
 | The Devil (XV) | a refusal | you are bound: only the legal moves are permitted |
@@ -228,49 +235,45 @@ Each phase is a card the agent turns. Run `kassi arcana` for the full spread.
 ## Case study
 
 Verified end-to-end against **Splunk Enterprise 10.4.0** with the **official Splunk MCP
-Server** (Splunkbase 7931, v1.2.0). One reproducible command drives the whole FSM from
-the petstore intent through `report`, with `correlate` calling the official
-`splunk_run_query` tool over the `mcp-remote` bridge:
+Server** (Splunkbase 7931, v1.2.0), called live at runtime. `scripts/verify_petclinic.py`
+drives the whole FSM with **nothing canned**: it starts a real FastAPI app, runs **real k6**
+through the k6 MCP server against it, reads the server-side regression back from Splunk
+through the four `correlate` queries, and runs Splunk's own `predict` + `anomalydetection`
+over the same window in `detect_anomalies`, all on the official `splunk_run_query` tool.
 
 ```console
-$ KASSI_LLM=anthropic uv run python scripts/verify_correlate_live.py
-splunk upstream: OFFICIAL Splunk MCP Server (from .env)
-... scaffold_done endpoints=3
-... splunk_preflight_done exists=True index=web sourcetypes=1
-verdict:          passed
-scaffold plan:    taxonomy=load parameterization=static_examples endpoints=3 (deterministic)
-k6 http_reqs:     200
-server-side rows: [{"total_events": "80", "server_errors": "7",
-                    "client_errors": "3", "avg_response_ms": "21.25"}]
-mcp tool calls:   ['k6.list_sections=ok', 'k6.get_documentation=ok' (x4),
-                   'k6.generate_script(prompt)=ok', 'k6.validate_script=ok', 'k6.run_script=ok',
-                   'splunk.splunk_get_info=ok', 'splunk.splunk_get_index_info=ok',
-                   'splunk.splunk_get_metadata=ok', 'splunk.splunk_run_query=ok']
+$ KASSI_LLM=anthropic envchain ai uv run python scripts/verify_petclinic.py
+target app:  petclinic (flawed POST /api/visits) at http://127.0.0.1:8400
+... validation failed (attempt 0): Unexpected token ILLEGAL ... Missing k6 module imports
+... fix_script_done attempt=1                          # repaired from the real k6 error
+... run_test_ok exit_code=0 reqs=6666
+verdict:        server-side regression: /api/visits p95 285.59ms, 45.2% 5xx, cause 'database is locked'
+k6 client-side: 6666 reqs, p95 280.92 ms, 15% failed
+worst endpoint: /api/visits   45.2% errs   p95 285.59 ms    <- the new endpoint
+                /api/owners     0.0% errs   p95   2.25 ms    <- healthy baseline
+                /api/vets       0.0% errs   p95   1.82 ms    <- healthy baseline
+root cause:     database is locked  (990x)
+mcp tool calls: k6.{list_sections, get_documentation x4, generate_script(prompt),
+                    validate_script x2, run_script}
+                splunk.{get_info, get_index_info, get_metadata, run_query x6}
 the reading:
-    The Fool: Intent mode selected across 3 endpoints.
-    The Hierophant: Consulted k6 documentation on requests, thresholds, checks, scenarios.
-    The Chariot: Deterministic load scaffold constructed.
-    The Magician: Script authored and passed validation.
-    The Tower: 200 requests executed; p95 21.4 ms, 0.06% failure rate.
-    The Hermit: Splunk web index confirmed with 1440 events.
-    The Lovers: Server aggregation revealed 80 total events, 7 errors, 21.25 ms average.
-    Judgement: Load test verdict passed.
+    🂠  The Magician: Script authored and validated in one repair round.
+    🂠  The Tower: 6666 requests executed with p95 280.92 ms, 15.04% failure.
+    🂠  The Star: predict + anomalydetection flagged the saturation bucket on /api/visits.
+    🂠  Judgement: Server regression confirmed: /api/visits, database lock root cause.
 ```
 
-What this proves: one agent drove every workflow step legally and orchestrated
-**12 tool calls across both MCP servers**. `scaffold` built a deterministic baseline, then
-`generate_script` authored the final script using k6's own `generate_script` MCP prompt
-(grounded by the `doc_lookup` refs); `splunk_preflight` confirmed the `web` index against
-the **live** official Splunk MCP Server; `run_test` returned 200 client-side k6 requests
-(p95 21.4 ms, 6% failed); `correlate` read back the server-side truth, 80 events with
-7 5xx and 3 4xx at 21.25 ms average; and `report` had Claude Haiku narrate each phase as a
-tarot reading. The client-side failure rate is explained by server-side errors, correlated
-over one window, with every upstream call on the ledger and in `mcp_provenance`.
+What this proves, all at runtime against live Splunk: the model authored a script that
+failed k6 validation, the `fix_script` loop repaired it from the real k6 error and
+re-validated, real k6 drove 6666 requests, the four `correlate` queries on the official
+Splunk MCP Server isolated the new endpoint (`/api/visits` at 45% 5xx and a ~130x p95 vs the
+healthy routes) and named the root cause k6 cannot see ("database is locked"), and Splunk's
+own `predict` + `anomalydetection` confirmed the saturation bucket statistically. Every
+upstream call is on the hash-chained ledger and in `mcp_provenance`. See
+[`docs/SPLUNK_SETUP.md`](docs/SPLUNK_SETUP.md) for the full setup.
 
-In this reproduction the k6 client metrics are canned so the k6 MCP server need not be
-installed, while telemetry is ingested into live Splunk over the run window and the
-Splunk leg runs through the real official MCP Server. Set `.env` and the script uses the
-official server automatically; otherwise it falls back to the local dev bridge.
+For a lighter reproduction without a target app, `scripts/verify_correlate_live.py` cans the
+k6 metrics and ingests sample telemetry, but still queries the real official Splunk MCP Server.
 
 ## Development
 

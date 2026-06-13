@@ -109,6 +109,56 @@ def build_correlation_queries(index: str, earliest: float, latest: float, span: 
     }
 
 
+def build_anomaly_queries(index: str, earliest: float, latest: float, span: str = "2s") -> dict[str, str]:
+    """Splunk's own ML over the test window, the statistical questions fixed thresholds
+    cannot answer. `forecast`: `predict` casts a latency band and the load breaches it.
+    `anomalies`: `anomalydetection` flags statistically outlying buckets. Both run through
+    the Splunk MCP `splunk_run_query` tool, scoped to the same window as the rollup.
+    """
+    base = f"search index={index} earliest={int(earliest)} latest={int(latest)}"
+    return {
+        "forecast": (
+            f"{base} | timechart span={span} perc95(response_time) AS p95_ms "
+            "| predict p95_ms AS forecast upper95=upper lower95=lower"
+        ),
+        "anomalies": (
+            f"{base} | timechart span={span} perc95(response_time) AS p95_ms "
+            "| anomalydetection action=annotate p95_ms"
+        ),
+    }
+
+
+def summarize_anomalies(forecast: list[dict[str, Any]], anomalies: list[dict[str, Any]]) -> dict[str, Any]:
+    """Fold the `predict` and `anomalydetection` rows into a compact verdict block:
+    the forecast latency band, how many buckets breached it, how many were flagged
+    statistically anomalous, and when the first anomaly fired (the saturation onset)."""
+    breaches, actuals, forecasts = [], [], []
+    for row in forecast:
+        actual = _to_float(row.get("p95_ms"))
+        upper = next((_to_float(v) for k, v in row.items() if k.lower().startswith("upper")), None)
+        predicted = _to_float(row.get("forecast"))
+        if actual is not None:
+            actuals.append(actual)
+        if predicted is not None:
+            forecasts.append(predicted)
+        if actual is not None and upper is not None and actual > upper:
+            breaches.append({"time": row.get("_time"), "p95_ms": actual, "upper_ms": upper})
+
+    flagged = [r for r in anomalies if r.get("probable_cause") or r.get("log_event_prob")]
+    onsets = sorted([b["time"] for b in breaches] + [r.get("_time") for r in flagged if r.get("_time")])
+
+    return {
+        "method": "splunk predict + anomalydetection",
+        "buckets_analyzed": len(actuals),
+        "peak_p95_ms": max(actuals) if actuals else None,
+        "forecast_p95_ms": round(forecasts[-1], 2) if forecasts else None,
+        "forecast_breaches": len(breaches),
+        "anomalous_buckets": len(flagged),
+        "first_anomaly": onsets[0] if onsets else None,
+        "peak_breach": max(breaches, key=lambda b: b["p95_ms"]) if breaches else None,
+    }
+
+
 def summarize_findings(results: dict[str, list[dict[str, Any]]]) -> dict[str, Any]:
     """Synthesize the actionable verdict facts from the four query result sets."""
     rollup = (results.get("rollup") or [{}])[0]

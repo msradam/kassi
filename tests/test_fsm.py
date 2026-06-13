@@ -166,12 +166,21 @@ async def test_splunk_correlation_when_configured(monkeypatch):
     correlation = report["correlation"]
     assert correlation["available"] is True
 
-    # correlate runs four windowed queries (overview, timeline, by-path, root cause).
+    # correlate runs four windowed queries (overview, timeline, by-path, root cause);
+    # detect_anomalies adds two ML queries (predict forecast + anomalydetection).
     queries = fake.calls_to("splunk", "splunk_run_query")
-    assert len(queries) == 4
+    assert len(queries) == 6
     assert all("earliest=" in q.args["query"] for q in queries)
     assert set(correlation["queries"]) == {"rollup", "timeline", "by_path", "root_cause"}
     assert "index=web" in correlation["queries"]["rollup"]["spl"]
+
+    # detect_anomalies runs Splunk's own predict + anomalydetection over the same window.
+    anomalies = report["anomalies"]
+    assert anomalies["available"] is True
+    assert set(anomalies["queries"]) == {"forecast", "anomalies"}
+    assert "predict" in anomalies["queries"]["forecast"]["spl"]
+    assert "anomalydetection" in anomalies["queries"]["anomalies"]["spl"]
+    assert "anomaly" in correlation["findings"]
 
     # the synthesized findings are what makes the Splunk side actionable.
     f = correlation["findings"]

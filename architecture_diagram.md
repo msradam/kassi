@@ -24,7 +24,8 @@ flowchart TB
         VS --> RT["run_test"]
         RT --> PF["splunk_preflight"]
         PF --> CO["correlate"]
-        CO --> RP["report<br/>(model narration)"]
+        CO --> DA["detect_anomalies<br/>(Splunk predict + anomalydetection)"]
+        DA --> RP["report<br/>(model narration)"]
         LEDGER[("immutable<br/>hash-chained ledger<br/>steps + refusals")]
     end
 
@@ -34,7 +35,7 @@ flowchart TB
 
     subgraph Upstreams["Upstream MCP servers (hidden from the driver)"]
         K6["Grafana k6 MCP server<br/>list_sections · get_documentation<br/>generate_script prompt · best_practices<br/>validate_script · run_script"]
-        SPL["Splunk MCP Server<br/>get_info · get_index_info · get_metadata<br/>splunk_run_query (SPL)"]
+        SPL["Splunk MCP Server<br/>get_info · get_index_info · get_metadata<br/>splunk_run_query (SPL + predict / anomalydetection)"]
     end
 
     subgraph Splunk["Splunk Enterprise"]
@@ -56,8 +57,48 @@ flowchart TB
     TARGET -->|logs/metrics| IDX
     PF -->|MCP call_upstream| SPL
     CO -->|MCP call_upstream| SPL
+    DA -->|MCP call_upstream| SPL
     SPL -->|SPL over test window| IDX
     RP -->|final verdict| A
+```
+
+## System diagram (ASCII)
+
+```
+  AI agent (driver): Claude Code / Cursor / any MCP client
+  sees exactly ONE tool ─────────────────────────────────────────┐
+                                                   step(action, inputs)
+                                                                  │
+  ┌───────────────────────────────────────────────────────────── ▼ ──────────┐
+  │  kassi - Burr FSM served over MCP by Theodosia                            │
+  │                                                                          │
+  │   select_mode → read_diff / parse_intent → doc_lookup → scaffold         │
+  │        → generate_script → validate_script ⇄ fix_script  (bounded loop)  │
+  │        → run_test → splunk_preflight → correlate → detect_anomalies      │
+  │        → report                                                          │
+  │                                                                          │
+  │   every step + every refusal ──▶ immutable hash-chained ledger           │
+  └──┬─────────────────┬──────────────────────────┬──────────────────────────┘
+     │ HTTP            │ MCP call_upstream         │ MCP call_upstream
+     ▼                 ▼                           ▼
+ ┌──────────────┐ ┌────────────────────┐ ┌────────────────────────────────┐
+ │ model        │ │ Grafana k6 MCP     │ │ Splunk MCP Server  (Splunk AI) │
+ │ Ollama /     │ │ generate_script    │ │ splunk_run_query (SPL)         │
+ │ Claude Haiku │ │ prompt · docs ·    │ │ get_info · get_index_info ·    │
+ │ authors the  │ │ best_practices ·   │ │ get_metadata · predict ·       │
+ │ script,      │ │ validate · run     │ │ anomalydetection (token-auth)  │
+ │ narrates run │ └─────────┬──────────┘ └───────────────┬────────────────┘
+ └──────────────┘           │ generated k6 load          │ windowed SPL
+                            ▼                            ▼
+                    ┌──────────────┐    logs/    ┌────────────────────┐
+                    │ target app   │───metrics──▶│ Splunk Enterprise  │
+                    │ (HTTP API)   │             │ indexed telemetry  │
+                    └──────────────┘             └────────────────────┘
+
+  Flow: driver drives the FSM by name → kassi hides both upstream MCP servers →
+  k6 drives load at the target → the target's telemetry lands in Splunk →
+  kassi reads it back over the exact test window via the Splunk MCP Server →
+  the model narrates a combined client + server verdict back to the driver.
 ```
 
 ## How the application interacts with Splunk
@@ -71,7 +112,10 @@ error/latency rollup over the configured index; overridable per run) and calls t
 official **Splunk MCP Server** `splunk_run_query` tool through Theodosia's
 `call_upstream`. The Splunk MCP Server runs the SPL against Splunk Enterprise and returns
 the server-side rollup, which kassi pairs with the client-side k6 metrics in the final
-report. Connection is the official `mcp-remote` stdio bridge to the server's
+report. The `detect_anomalies` step then runs Splunk's own ML over the same window through
+the same tool: `predict` forecasts the latency band and `anomalydetection` flags
+statistically outlying buckets, so the saturation onset is found by Splunk, not by a fixed
+threshold in kassi. Connection is the official `mcp-remote` stdio bridge to the server's
 streamable-HTTP endpoint, authenticated with an encrypted Bearer token. Every Splunk and
 k6 tool call is recorded to the report's `mcp_provenance` block.
 
@@ -104,8 +148,10 @@ Two layers of AI, kept deliberately narrow:
    metadata before correlation.
 7. `correlate` calls the **Splunk MCP Server** with windowed SPL to read that server-side
    telemetry back.
-8. `report` has the model narrate the run, then emits a combined client + server verdict
+8. `detect_anomalies` calls the **Splunk MCP Server** again with `predict` and
+   `anomalydetection` over the same window, so Splunk's own ML locates the anomaly.
+9. `report` has the model narrate the run, then emits a combined client + server verdict
    to the driver, including the `mcp_provenance` record of every upstream tool call.
-9. Every transition and every refusal is written to Theodosia's immutable, hash-chained
-   ledger; `kassi verify` confirms it has not been tampered with.
+10. Every transition and every refusal is written to Theodosia's immutable, hash-chained
+    ledger; `kassi verify` confirms it has not been tampered with.
 ```

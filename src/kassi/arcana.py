@@ -29,8 +29,22 @@ ARCANA: dict[str, tuple[str, str, str]] = {
     "run_test": ("XVI", "The Tower", "Load strikes the structure; what breaks is revealed."),
     "splunk_preflight": ("IX", "The Hermit", "A lantern into the index before the reading."),
     "correlate": ("VI", "The Lovers", "Client and server are joined over one window."),
+    "detect_anomalies": (
+        "XVII",
+        "The Star",
+        "Splunk's own forecast is cast; where the load breaches the band is revealed.",
+    ),
     "report": ("XX", "Judgement", "The verdict is spoken and sealed to the ledger."),
 }
+
+# One sigil drawn on every line: a face-down tarot card.
+SIGIL = "🂠"
+
+
+def adorn(text: str) -> str:
+    """Prefix each non-empty line of a reading with the card sigil."""
+    return "\n".join(f"{SIGIL}  {line}" if line.strip() else line for line in text.splitlines())
+
 
 LEDGER = ("XXI", "The World", "The cycle closes: an immutable, hash-chained record.")
 REFUSAL = ("XV", "The Devil", "You are bound: only the legal moves are permitted.")
@@ -57,11 +71,11 @@ def spread() -> str:
     name_w = max(len(r[1]) for r in rows)
     act_w = max(len(r[2]) for r in rows)
 
-    lines = [f"kassi: {TAGLINE}", ""]
+    lines = [f"{SIGIL}  kassi: {TAGLINE}", ""]
     for num, name, action, omen in rows:
-        lines.append(f"  {num:>{num_w}}  {name:<{name_w}}  {action:<{act_w}}  {omen}")
+        lines.append(f"{SIGIL}  {num:>{num_w}}  {name:<{name_w}}  {action:<{act_w}}  {omen}")
     lines.append("")
     for num, name, omen in (LEDGER, REFUSAL):
         label = "ledger" if name == "The World" else "refusal"
-        lines.append(f"  {num:>{num_w}}  {name:<{name_w}}  {label:<{act_w}}  {omen}")
+        lines.append(f"{SIGIL}  {num:>{num_w}}  {name:<{name_w}}  {label:<{act_w}}  {omen}")
     return "\n".join(lines)
