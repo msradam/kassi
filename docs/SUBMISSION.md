@@ -1,13 +1,14 @@
-# kassi — the load test that explains itself
+# kassi — closed-loop observability, driven by change
 
-**Elevator pitch.** Load testing tells you *that* a change made an endpoint slower; it never
-tells you *why* — the client-side numbers live in k6, the server-side truth lives in Splunk,
-and nobody joins them in CI. kassi is an agent that does both in one pass: point it at a code
-change, it load-tests the affected endpoint through the Grafana k6 MCP server, then correlates
-the result with the target's server-side telemetry through the official Splunk MCP Server —
-naming the root cause (`database is locked`), citing every fact to the query that produced it,
-forecasting the trend with Splunk's own ML, and recommending the fix. Every step and every
-refusal is written to a hash-chained, auditable ledger, so it is safe to run unattended in CI.
+**Elevator pitch.** Every change to a service has an observable impact, but catching it means
+generating traffic, digging through Splunk, and correlating by hand — so it almost never
+happens before production. kassi closes that loop autonomously. Point it at a code change and
+it exercises the affected endpoints through the Grafana k6 MCP server, watches the server-side
+telemetry land in Splunk through the official Splunk MCP Server, and explains what the change
+did and *why* — root cause (`database is locked`), cited evidence, an ML forecast of the trend,
+and the fix — then publishes the verdict back to a Splunk dashboard. A change goes in, an
+explained outcome comes out: agentic observability, every step on a hash-chained, auditable
+ledger so it is safe to run unattended.
 
 **Track:** Observability (primary); also Platform & Developer Experience.
 **Bonus prizes targeted:** Best Use of Splunk MCP Server; Best Use of Splunk Developer Tools.
@@ -18,13 +19,14 @@ and `docs/SPLUNK_SETUP.md`. Built new during the submission period for this hack
 
 ## Inspiration
 
-Load testing tells you *that* a change made an endpoint slower. It does not tell you
-*why*. The client-side numbers (p95, error rate, throughput) live in one tool. The
-server-side truth (5xx spikes, slow queries, saturation) lives in Splunk. Connecting the
-two is manual, done after the fact, and almost never happens inside CI. We wanted an
-agent that runs the load test and explains the result from server-side telemetry in one
-pass, and we wanted that agent to be safe to run autonomously: bounded, auditable, and
-unable to wander off its rails.
+A change to a service always has an observable impact — a new endpoint saturates a
+connection pool, a query goes N+1, an error path leaks under concurrency — but that impact
+only surfaces once something exercises the system, and then only in server-side telemetry.
+Seeing it means generating traffic, digging through Splunk, and correlating the two by hand,
+after the fact, so it almost never happens before production. We wanted an agent that closes
+that loop: take a change, exercise the affected endpoints, and explain their impact from
+Splunk's server-side telemetry in one pass — and we wanted it safe to run unattended:
+bounded, auditable, and unable to wander off its rails.
 
 The name is the theme: Kassandra saw what others would not believe, so kassi divines your
 stack's performance. Each workflow phase is a card of the Major Arcana the agent turns,
@@ -32,7 +34,7 @@ from The Fool (the run begins) to Judgement (the verdict, sealed to the ledger).
 
 ## What it does
 
-Kassi is an AI agent that closes the load-test-to-observability loop. Give it a code
+kassi is an AI agent that closes the observability loop on a change. Give it a code
 change (a git diff) or a plain-language intent and it:
 
 1. picks the affected HTTP endpoints, from the diff or by scoring an OpenAPI spec against

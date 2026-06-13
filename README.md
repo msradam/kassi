@@ -4,14 +4,15 @@
 
 > Divinate your stack's performance.
 
-The load test that explains itself. Load testing tells you *that* a change made an
-endpoint slower; it never tells you *why*. kassi is an agentic, closed-loop tool that
-does both: point it at a code change (a git diff) or a plain-language intent, and it picks
-the affected HTTP endpoints, generates and runs a k6 load test, then correlates the
-client-side results with the target's **server-side telemetry in Splunk** to explain *why*
-it regressed — a **cited root-cause analysis** (evidence and a recommended fix), a forecast
-from Splunk's own ML, and a combined verdict. Every step runs on an auditable, hash-chained
-state machine.
+Closed-loop observability, driven by change. A change to a service always has an observable
+impact, but catching it means generating traffic, digging through Splunk, and correlating by
+hand — so it rarely happens before production. kassi is an agent that closes that loop: point
+it at a code change (a git diff) or a plain-language intent, and it exercises the affected
+endpoints (real traffic through the Grafana k6 MCP server), reads the target's **server-side
+telemetry from Splunk** over the exact window, and explains what the change did and *why* — a
+**cited root-cause analysis** (evidence and a recommended fix), an ML forecast of the trend,
+and a verdict published back to a Splunk dashboard. Every step runs on an auditable,
+hash-chained state machine.
 
 Named for the seer who saw what others would not believe, kassi reads a change and
 foretells how it behaves under load. The workflow is themed as a tarot draw: the agent
