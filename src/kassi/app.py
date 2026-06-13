@@ -631,7 +631,7 @@ def _phase_facts(state: State, verdict: str) -> str:
         lines.append(f"- The Lovers (correlate): {detail}")
         if an := (state["anomalies"] or {}):
             lines.append(
-                f"- The Star (detect_anomalies): {an.get('method', 'forecast')} — forecast p95 "
+                f"- The Star (detect_anomalies): {an.get('method', 'forecast')}, forecast p95 "
                 f"{an.get('forecast_p95_ms')}ms (peak {an.get('peak_p95_ms')}ms over "
                 f"{an.get('buckets_analyzed', 0)} buckets); {an.get('anomalous_buckets', 0)} "
                 f"anomalous bucket(s), {an.get('forecast_breaches', 0)} band breach(es)"

@@ -1,17 +1,17 @@
-# kassi — foresee what your change does to production
+# kassi: foresee what your change does to production
 
 > *Closed-loop observability, driven by change.* Most outages are self-inflicted by a change;
-> kassi reads your change's fate in Splunk's telemetry before prod does — and unlike Cassandra,
+> kassi reads your change's fate in Splunk's telemetry before prod does, and unlike Cassandra,
 > it brings the proof.
 
-**Elevator pitch.** Roughly 80% of production outages are self-inflicted — they trace back to a
+**Elevator pitch.** Roughly 80% of production outages are self-inflicted, they trace back to a
 change. The warning is usually there; it just isn't believed, because a change's real impact
 only surfaces in server-side telemetry after something exercises the system, and nobody
 generates traffic and correlates it with Splunk by hand before shipping. kassi closes that loop
 autonomously. Point it at a code change and it exercises the affected endpoints through the
 Grafana k6 MCP server, watches the server-side telemetry land in Splunk through the official
-Splunk MCP Server, and explains what the change did and *why* — root cause (`database is
-locked`), cited evidence, an ML forecast of the trend, and the fix — then publishes the verdict
+Splunk MCP Server, and explains what the change did and *why*, root cause (`database is
+locked`), cited evidence, an ML forecast of the trend, and the fix, then publishes the verdict
 back to a Splunk dashboard. A change goes in, an explained outcome comes out: agentic
 observability, every step sealed to a hash-chained, auditable ledger, so the prophecy comes
 with proof and it is safe to run unattended.
@@ -25,17 +25,17 @@ and `docs/SPLUNK_SETUP.md`. Built new during the submission period for this hack
 
 ## Inspiration
 
-Roughly 80% of production outages are self-inflicted — they trace back to a change, which is
+Roughly 80% of production outages are self-inflicted, they trace back to a change, which is
 why "change failure rate" is one of the four DORA metrics teams are measured on. And every
 engineer has been Cassandra about a change: you sensed it was risky, you couldn't prove it, it
 shipped, and it took down prod at 2am. The warning existed; it just wasn't believed. The reason
-is structural — a change's real impact only surfaces in server-side telemetry once something
+is structural, a change's real impact only surfaces in server-side telemetry once something
 exercises the system, and catching it means generating traffic, digging through Splunk, and
 correlating the two by hand, after the fact. So it almost never happens before production.
 
 kassi is the seer that gets believed. It closes the loop autonomously: take a change, exercise
-the affected endpoints, and read the server-side truth from Splunk in one pass — root cause,
-cited evidence, an ML forecast of the trend, a recommended fix — every step sealed to a
+the affected endpoints, and read the server-side truth from Splunk in one pass, root cause,
+cited evidence, an ML forecast of the trend, a recommended fix, every step sealed to a
 hash-chained ledger, so the prophecy comes with proof. The name is the theme: Kassandra foresaw
 what others would not believe; kassi foresees a change's impact and makes it undeniable. Each
 workflow phase is a card of the Major Arcana the agent turns, from The Fool (the run begins) to
@@ -79,7 +79,7 @@ every tool call on an audit ledger.
 It ships **five demo targets spanning the load-failure taxonomy**, so the correlation is proven
 on distinct signatures rather than one trick: a SQLite write-lock (5xx under concurrency, the
 case above), an N+1 query (latency with **zero errors**, visible only in server-side `db_time`),
-an unbounded recompute (latency **rising over the run** — where the forecast earns its keep:
+an unbounded recompute (latency **rising over the run**, where the forecast earns its keep:
 Granite projects p95 climbing past the current value), a too-tight rate limit (**429** throttling,
 exercising the 4xx-vs-5xx split), and a downstream timeout cascade (latency **plus 504s**, a
 dependency root cause whose fix is resilience, not query tuning). Each yields a different cause
@@ -171,7 +171,7 @@ and recommendation.
   the runner so the MCP call never returns, so every blocking upstream call is bounded by a
   timeout that falls back to the deterministic scaffold: the pipeline degrades, never stalls.
 
-## What's next for Kassi: Synthetic Load Generation
+## What's next for kassi: Synthetic Load Generation
 
 - Use a Splunk-hosted model for a root-cause narrative over the correlated window.
 - Use the AI Assistant for SPL to generate correlation queries from intent.

@@ -9,7 +9,7 @@ change, and the warning usually exists but can't be proven before it ships. kass
 loop: point it at a code change (a git diff) or a plain-language intent, and it exercises the
 affected endpoints (real traffic through the Grafana k6 MCP server), reads the target's
 **server-side telemetry from Splunk** over the exact window, and explains what the change did
-and *why* — a **cited root-cause analysis** (evidence and a recommended fix), an ML forecast of
+and *why*, a **cited root-cause analysis** (evidence and a recommended fix), an ML forecast of
 the trend, and a verdict published back to a Splunk dashboard. Every step is sealed to an
 auditable, hash-chained ledger, so the prophecy comes with proof. (Named for Kassandra, who
 foresaw what others would not believe.)
@@ -306,7 +306,7 @@ unchanged; the failure only appears under concurrency.
 
 | App | New endpoint | Failure signature | What it exercises |
 | --- | --- | --- | --- |
-| `petclinic` | `POST /api/visits` | 5xx, constant — `database is locked` | correlation isolates the root-cause error |
+| `petclinic` | `POST /api/visits` | 5xx, constant, `database is locked` | correlation isolates the root-cause error |
 | `storefront` | `POST /api/checkout` | latency, **0 errors** (N+1 over a shared connection) | server-side `db_time`, invisible to the client error rate |
 | `feed` | `POST /api/events` | latency **rising over the run** (unbounded recompute) | `detect_anomalies`: the forecast band and anomalydetection catch the trend |
 | `gateway` | `GET /api/quote` | **4xx** 429 throttling (too-tight rate limit) | client-vs-server error split: "throttled, not broken" |

@@ -12,7 +12,7 @@ flowchart TB
         A["Claude Code / any MCP client<br/>sees ONE tool: step(action, inputs)"]
     end
 
-    subgraph Kassi["kassi: Burr FSM served over MCP by Theodosia"]
+    subgraph kassi["kassi: Burr FSM served over MCP by Theodosia"]
         direction TB
         SM["select_mode"] --> RD["read_diff / parse_intent"]
         RD --> DL["doc_lookup"]
@@ -45,7 +45,7 @@ flowchart TB
     TARGET["Target service<br/>(HTTP API under test)"]
 
     A -->|MCP: step| SM
-    Kassi -.records.-> LEDGER
+    kassi -.records.-> LEDGER
     DL -->|MCP call_upstream| K6
     SC -->|deterministic compose| GS
     GS -->|k6 generate_script prompt| K6

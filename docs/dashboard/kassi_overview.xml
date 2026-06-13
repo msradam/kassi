@@ -1,5 +1,5 @@
 <dashboard theme="dark" version="1.1">
-  <label>kassi — load test, explained by Splunk</label>
+  <label>kassi: change impact, read from Splunk</label>
   <description>Client-side k6 metrics joined to the target's server-side telemetry over the exact test window. Each run is published to index=kassi_runs by kassi's report phase.</description>
 
   <row>
