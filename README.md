@@ -34,8 +34,8 @@ Built for the Splunk Agentic Ops Hackathon (Observability track). See
 
 The demo above is recorded from [`docs/demo.tape`](docs/demo.tape) with
 [vhs](https://github.com/charmbracelet/vhs): it prints the state machine, then drives the
-whole workflow end-to-end (plan filled by Claude Haiku, k6 docs + run, Splunk preflight
-and correlation) against a live Splunk.
+whole workflow end-to-end (script + analysis from the local Granite 4.1 model, k6 docs + run,
+Splunk preflight and correlation) against a live Splunk.
 
 ### Screenshots
 
@@ -71,11 +71,14 @@ kassi warm-k6
 # the endpoint from the app. The npx-based stdio bridge needs Node.js.
 ```
 
-The model authors the k6 script (on top of the deterministic scaffold) and narrates the
-run; it never writes SPL. A local [Ollama](https://ollama.com) model is used by default
-(`qwen2.5-coder:7b`); set `KASSI_LLM=anthropic` to use the Claude Messages API instead
-(`claude-haiku-4-5`, needs `ANTHROPIC_API_KEY`). If the backend is unreachable, kassi runs
-the deterministic scaffold and falls back to the static omens for the narration.
+The model authors the k6 script (on top of the deterministic scaffold), writes a cited
+analysis of the result, and narrates the run as a tarot reading; it never writes SPL. The
+default backend is a local [Ollama](https://ollama.com) model, **IBM Granite 4.1**
+(`granite4.1:8b`), whose chat template natively grounds the analysis on the run's evidence
+documents, so the writeup stays to the numbers kassi measured (and cites their source) rather
+than inventing them. Set `KASSI_LLM=anthropic` for the Claude Messages API instead
+(`claude-haiku-4-5`, needs `ANTHROPIC_API_KEY`). If the backend is unreachable, kassi runs the
+deterministic scaffold and a deterministic analysis, so a run never fails for lack of a model.
 
 The Splunk step is optional: without `KASSI_SPLUNK_MCP_ENDPOINT` + `KASSI_SPLUNK_TOKEN`
 set, kassi skips correlation and runs k6-only.
@@ -119,9 +122,9 @@ kassi verify <app-id>        # confirm the ledger has not been tampered with
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `KASSI_LLM` | `ollama` | model backend for script authoring + narration: `ollama` or `anthropic` |
-| `KASSI_MODEL` | `qwen2.5-coder:7b` / `claude-haiku-4-5` | model tag (Ollama tag, or Claude model id when `KASSI_LLM=anthropic`) |
-| `OLLAMA_HOST` | `http://localhost:11434` | Ollama endpoint (when `KASSI_LLM=ollama`) |
+| `KASSI_LLM` | `ollama` | model backend for script authoring, analysis + narration: `ollama` or `anthropic` |
+| `KASSI_MODEL` | `granite4.1:8b` / `claude-haiku-4-5` | model tag (Ollama tag, or Claude model id when `KASSI_LLM=anthropic`) |
+| `OLLAMA_HOST` | `http://localhost:11434` | Ollama endpoint (point at the host running Granite, e.g. a LAN box) |
 | `ANTHROPIC_API_KEY` | unset | Claude API key (when `KASSI_LLM=anthropic`) |
 | `KASSI_K6_CMD` | `k6 x mcp` | command line for the k6 MCP server (set to `mcp-k6` for the standalone binary) |
 | `KASSI_K6_DOCKER` | unset | if set, run the k6 MCP server via Docker |
@@ -206,10 +209,14 @@ stateDiagram-v2
   buckets. The saturation onset is found by Splunk's ML, not by a fixed threshold in kassi,
   and the forecast band and anomalous buckets fold into the verdict. Non-blocking, like the
   other Splunk phases.
-- `report` has the model narrate the run as a tarot reading, one line per phase from
-  the recorded facts, falling back to the static omens when the model is absent. Every
-  upstream tool call is logged to `mcp_provenance`. The work-phases stay deterministic;
-  the model authors only the script and the narration.
+- `report` produces two things from the recorded facts: a practical **analysis** (summary,
+  affected endpoints, root cause, evidence with a source citation per fact, and a
+  recommendation), grounded on the evidence documents so it stays to the measured numbers;
+  and the tarot **narration**, one line per phase. Both fall back to deterministic text when
+  the model is absent. Every upstream tool call is logged to `mcp_provenance`, and the run
+  (verdict, metrics, recommendation, analysis) is published to Splunk for the dashboard. The
+  work-phases stay deterministic; the model authors only the script, the analysis, and the
+  narration.
 
 ## The Major Arcana
 

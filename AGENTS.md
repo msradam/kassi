@@ -131,9 +131,14 @@ Theodosia's `kassi doctor --runtime` enforces most of these; run it after edits.
   the model author the final script on top of it (the model authors k6 source now, a
   deliberate change), guided by k6's own `generate_script` MCP prompt. On model
   absence, empty output, or validation give-up, the pipeline runs the scaffold. So the
-  pipeline must always work with the model backend (Ollama or Anthropic) unreachable.
+  pipeline must always work with the model backend (Ollama/Granite or Anthropic) unreachable.
 - **The model never writes SPL.** `parse.build_correlation_spl` composes the
   correlation query in pure Python; keep it that way.
+- **The analysis is grounded, not free-form.** `report` builds an evidence list (`analysis.py`)
+  and passes it to the model as documents. The default model, IBM `granite4.1:8b`, grounds on
+  them via its document role (`llm.OllamaLLM` emits `document_<source>` messages); Anthropic
+  inlines them. `analysis.compose_analysis` is the deterministic fallback. Keep evidence facts
+  paired with their source tool so citations stay accurate.
 - Sample request data in the scaffold is derived best-effort from the OpenAPI schema.
   It only has to exercise the endpoint shape, not be semantically perfect.
 

@@ -30,7 +30,7 @@ flowchart TB
     end
 
     subgraph AI["AI / models"]
-        LLM["model (Ollama or Claude Haiku)<br/>authors the script · narrates the run"]
+        LLM["model (local Granite 4.1, or Claude)<br/>authors the script · grounded analysis · narration"]
     end
 
     subgraph Upstreams["Upstream MCP servers (hidden from the driver)"]
@@ -83,11 +83,11 @@ flowchart TB
      ▼                 ▼                           ▼
  ┌──────────────┐ ┌────────────────────┐ ┌────────────────────────────────┐
  │ model        │ │ Grafana k6 MCP     │ │ Splunk MCP Server  (Splunk AI) │
- │ Ollama /     │ │ generate_script    │ │ splunk_run_query · get_info ·  │
- │ Claude Haiku │ │ prompt · docs ·    │ │ get_index_info · get_metadata ·│
- │ authors the  │ │ best_practices ·   │ │ StateSpaceForecast ·           │
- │ script,      │ │ validate · run     │ │ anomalydetection (token-auth)  │
- │ narrates run │ └─────────┬──────────┘ └───────────────┬────────────────┘
+ │ Granite 4.1  │ │ generate_script    │ │ splunk_run_query · get_info ·  │
+ │ (local) or   │ │ prompt · docs ·    │ │ get_index_info · get_metadata ·│
+ │ Claude API   │ │ best_practices ·   │ │ StateSpaceForecast ·           │
+ │ script +     │ │ validate · run     │ │ anomalydetection (token-auth)  │
+ │ analysis     │ └─────────┬──────────┘ └───────────────┬────────────────┘
  └──────────────┘           │ generated k6 load          │ windowed SPL
                             ▼                            ▼
                     ┌──────────────┐    logs/    ┌────────────────────┐
@@ -128,9 +128,10 @@ Two layers of AI, kept deliberately narrow:
    take next. It sees only kassi's single `step` tool. kassi's state machine refuses any
    illegal step and returns the legal next actions, so the agent's autonomy is bounded by
    construction and fully audited.
-2. **A model** (a local Ollama model or Claude Haiku) authors the k6 script on top of the
-   deterministic scaffold and narrates the run. It never writes SPL; pure Python composes
-   the correlation query, and the `scaffold` is the known-good fallback. This keeps the
+2. **A model** (a local IBM Granite 4.1 model by default, or Claude) authors the k6 script on
+   top of the deterministic scaffold, writes a cited analysis grounded on the run's evidence,
+   and narrates the run. It never writes SPL; pure Python composes the correlation query, and
+   the `scaffold` is the known-good fallback. This keeps the
    work-phases deterministic and the blast radius of a bad model output small.
 
 ## Data flow between services, APIs, and components
@@ -152,8 +153,9 @@ Two layers of AI, kept deliberately narrow:
 8. `detect_anomalies` calls the **Splunk MCP Server** again with the AI Toolkit's
    `StateSpaceForecast` (core `predict` as a fallback) and `anomalydetection` over the same
    window, so Splunk's own ML locates the anomaly.
-9. `report` has the model narrate the run, then emits a combined client + server verdict
-   to the driver, including the `mcp_provenance` record of every upstream tool call.
+9. `report` has the model write a grounded, cited analysis and narrate the run, then emits a
+   combined client + server verdict to the driver (with the `mcp_provenance` record of every
+   upstream tool call) and publishes the run to Splunk for the dashboard.
 10. Every transition and every refusal is written to Theodosia's immutable, hash-chained
     ledger; `kassi verify` confirms it has not been tampered with.
 ```

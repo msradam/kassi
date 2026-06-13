@@ -36,8 +36,9 @@ change (a git diff) or a plain-language intent and it:
    telemetry over the exact test window, then runs the AI Toolkit's `StateSpaceForecast`
    (with core `predict` as a fallback) and `anomalydetection` over that window to locate the
    saturation onset statistically, and
-5. reports a combined client plus server verdict, with the model narrating each phase as a
-   tarot reading and a provenance record of every upstream tool call.
+5. reports a combined client plus server verdict with a cited, grounded analysis (root cause,
+   evidence, recommendation), the model narrating each phase as a tarot reading, a provenance
+   record of every upstream tool call, and the run published to a Splunk dashboard.
 
 The driving agent (Claude Code, Cursor, any MCP client) never sees k6 or Splunk. It sees
 one tool, `step(action, inputs)`, and takes the workflow one move at a time.
@@ -82,14 +83,16 @@ audit ledger.
   the saturation onset is found by Splunk's ML rather than a fixed
   threshold in kassi. All three Splunk phases degrade gracefully to k6-only when not
   configured.
-- **Deterministic scaffold, model on top.** A deterministic `scaffold` phase composes a
-  runnable k6 baseline from the OpenAPI schema with no model. The `generate_script` phase
-  then has the model author the final script on top of it, guided by k6's own
-  `generate_script` prompt, and `report` has the model narrate each phase as a tarot
-  reading. The backend is pluggable (a local Ollama model or Claude Haiku via the Messages
-  API, one env var). The model never writes SPL, and when it is offline or its output keeps
-  failing validation the pipeline runs the deterministic scaffold, so a run never fails for
-  lack of a model.
+- **Deterministic scaffold, grounded model on top.** A deterministic `scaffold` phase
+  composes a runnable k6 baseline from the OpenAPI schema with no model. The `generate_script`
+  phase then has the model author the final script on top of it, guided by k6's own
+  `generate_script` prompt; `report` has the model write a cited analysis (root cause,
+  evidence, recommendation) and narrate the run as a tarot reading. The default backend is a
+  local **IBM Granite 4.1** model via Ollama, whose chat template natively grounds the analysis
+  on the run's evidence documents, so it stays to the measured facts and cites each one's
+  source. Claude is an alternative (one env var). The model never writes SPL, and when it is
+  offline or its output keeps failing validation the pipeline runs the deterministic scaffold
+  and a deterministic analysis, so a run never fails for lack of a model.
 
 ## Challenges we ran into
 
@@ -118,6 +121,10 @@ audit ledger.
 - The result loop closes back into Splunk: every run publishes its verdict and metrics to
   `index=kassi_runs` over HEC, and a Splunk dashboard renders the client-and-server join over
   time, so the analysis lives where the ops team already works.
+- A practical, cited analysis (root cause, evidence, recommendation), written by a local
+  **IBM Granite 4.1** model that grounds every fact on the run's evidence documents via its
+  native document role, so the writeup is attributable and resistant to hallucination, and it
+  runs fully offline with no hosted-API dependency.
 
 ## What we learned
 
