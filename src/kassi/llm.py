@@ -19,6 +19,10 @@ from typing import Protocol
 import httpx
 
 DEFAULT_MODEL = "granite4.1:8b"
+# Granite 4.1's hybrid Mamba-2/transformer keeps the long-context KV cache cheap, so we run the
+# model's full 131K window by default (grounding documents are never silently truncated). Tune
+# down with KASSI_NUM_CTX if the host is memory-constrained.
+DEFAULT_NUM_CTX = int(os.environ.get("KASSI_NUM_CTX", "131072"))
 DEFAULT_ANTHROPIC_MODEL = "claude-haiku-4-5"
 ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages"
 ANTHROPIC_VERSION = "2023-06-01"
@@ -46,7 +50,7 @@ class OllamaLLM:
         model: str = DEFAULT_MODEL,
         host: str | None = None,
         temperature: float = 0.1,
-        num_ctx: int = 8192,
+        num_ctx: int = DEFAULT_NUM_CTX,
         timeout: float = 300.0,
     ) -> None:
         self.model = model
