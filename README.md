@@ -4,15 +4,15 @@
 
 > Divinate your stack's performance.
 
-Closed-loop observability, driven by change. A change to a service always has an observable
-impact, but catching it means generating traffic, digging through Splunk, and correlating by
-hand — so it rarely happens before production. kassi is an agent that closes that loop: point
-it at a code change (a git diff) or a plain-language intent, and it exercises the affected
-endpoints (real traffic through the Grafana k6 MCP server), reads the target's **server-side
-telemetry from Splunk** over the exact window, and explains what the change did and *why* — a
-**cited root-cause analysis** (evidence and a recommended fix), an ML forecast of the trend,
-and a verdict published back to a Splunk dashboard. Every step runs on an auditable,
-hash-chained state machine.
+Closed-loop observability, driven by change. Most production outages are self-inflicted by a
+change, and the warning usually exists but can't be proven before it ships. kassi closes that
+loop: point it at a code change (a git diff) or a plain-language intent, and it exercises the
+affected endpoints (real traffic through the Grafana k6 MCP server), reads the target's
+**server-side telemetry from Splunk** over the exact window, and explains what the change did
+and *why* — a **cited root-cause analysis** (evidence and a recommended fix), an ML forecast of
+the trend, and a verdict published back to a Splunk dashboard. Every step is sealed to an
+auditable, hash-chained ledger, so the prophecy comes with proof. (Named for Kassandra, who
+foresaw what others would not believe.)
 
 Named for the seer who saw what others would not believe, kassi reads a change and
 foretells how it behaves under load. The workflow is themed as a tarot draw: the agent

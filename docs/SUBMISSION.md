@@ -1,14 +1,20 @@
-# kassi — closed-loop observability, driven by change
+# kassi — foresee what your change does to production
 
-**Elevator pitch.** Every change to a service has an observable impact, but catching it means
-generating traffic, digging through Splunk, and correlating by hand — so it almost never
-happens before production. kassi closes that loop autonomously. Point it at a code change and
-it exercises the affected endpoints through the Grafana k6 MCP server, watches the server-side
-telemetry land in Splunk through the official Splunk MCP Server, and explains what the change
-did and *why* — root cause (`database is locked`), cited evidence, an ML forecast of the trend,
-and the fix — then publishes the verdict back to a Splunk dashboard. A change goes in, an
-explained outcome comes out: agentic observability, every step on a hash-chained, auditable
-ledger so it is safe to run unattended.
+> *Closed-loop observability, driven by change.* Most outages are self-inflicted by a change;
+> kassi reads your change's fate in Splunk's telemetry before prod does — and unlike Cassandra,
+> it brings the proof.
+
+**Elevator pitch.** Roughly 80% of production outages are self-inflicted — they trace back to a
+change. The warning is usually there; it just isn't believed, because a change's real impact
+only surfaces in server-side telemetry after something exercises the system, and nobody
+generates traffic and correlates it with Splunk by hand before shipping. kassi closes that loop
+autonomously. Point it at a code change and it exercises the affected endpoints through the
+Grafana k6 MCP server, watches the server-side telemetry land in Splunk through the official
+Splunk MCP Server, and explains what the change did and *why* — root cause (`database is
+locked`), cited evidence, an ML forecast of the trend, and the fix — then publishes the verdict
+back to a Splunk dashboard. A change goes in, an explained outcome comes out: agentic
+observability, every step sealed to a hash-chained, auditable ledger, so the prophecy comes
+with proof and it is safe to run unattended.
 
 **Track:** Observability (primary); also Platform & Developer Experience.
 **Bonus prizes targeted:** Best Use of Splunk MCP Server; Best Use of Splunk Developer Tools.
@@ -19,18 +25,21 @@ and `docs/SPLUNK_SETUP.md`. Built new during the submission period for this hack
 
 ## Inspiration
 
-A change to a service always has an observable impact — a new endpoint saturates a
-connection pool, a query goes N+1, an error path leaks under concurrency — but that impact
-only surfaces once something exercises the system, and then only in server-side telemetry.
-Seeing it means generating traffic, digging through Splunk, and correlating the two by hand,
-after the fact, so it almost never happens before production. We wanted an agent that closes
-that loop: take a change, exercise the affected endpoints, and explain their impact from
-Splunk's server-side telemetry in one pass — and we wanted it safe to run unattended:
-bounded, auditable, and unable to wander off its rails.
+Roughly 80% of production outages are self-inflicted — they trace back to a change, which is
+why "change failure rate" is one of the four DORA metrics teams are measured on. And every
+engineer has been Cassandra about a change: you sensed it was risky, you couldn't prove it, it
+shipped, and it took down prod at 2am. The warning existed; it just wasn't believed. The reason
+is structural — a change's real impact only surfaces in server-side telemetry once something
+exercises the system, and catching it means generating traffic, digging through Splunk, and
+correlating the two by hand, after the fact. So it almost never happens before production.
 
-The name is the theme: Kassandra saw what others would not believe, so kassi divines your
-stack's performance. Each workflow phase is a card of the Major Arcana the agent turns,
-from The Fool (the run begins) to Judgement (the verdict, sealed to the ledger).
+kassi is the seer that gets believed. It closes the loop autonomously: take a change, exercise
+the affected endpoints, and read the server-side truth from Splunk in one pass — root cause,
+cited evidence, an ML forecast of the trend, a recommended fix — every step sealed to a
+hash-chained ledger, so the prophecy comes with proof. The name is the theme: Kassandra foresaw
+what others would not believe; kassi foresees a change's impact and makes it undeniable. Each
+workflow phase is a card of the Major Arcana the agent turns, from The Fool (the run begins) to
+Judgement (the verdict, sealed to the ledger).
 
 ## What it does
 
