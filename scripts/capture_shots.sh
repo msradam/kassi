@@ -10,8 +10,9 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-STYLE=(--window --border.radius 8 --padding 26 --margin 24
-       --background "#0b070c" --shadow.blur 22 --shadow.y 12)
+# margin 0 + radius 0 + no shadow: the window fills the whole image with an opaque background,
+# so there is no transparent border (Devpost does not render transparent PNGs well).
+STYLE=(--window --margin 0 --border.radius 0 --padding 40 --background "#0b070c")
 
 freeze --execute "uv run kassi render" -o docs/assets/shot-render.png "${STYLE[@]}"
 freeze --execute "uv run kassi arcana" -o docs/assets/shot-arcana.png "${STYLE[@]}"
