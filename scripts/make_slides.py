@@ -53,90 +53,76 @@ def vgradient(w: int, h: int) -> Image.Image:
 
 
 # Each slide: kicker, optional huge `big`, optional `title`, optional `accent` (italic), body lines.
+# Ordered for a sub-3-minute demo: hook, one dense pitch slide, then straight to the live demo with
+# a card per scenario, then the close. The judge sees the essentials in the first 20 seconds.
 SLIDES = [
-    {
-        "kicker": "SPLUNK AGENTIC OPS HACKATHON  ·  OBSERVABILITY",
+    {  # 1. HOOK — front-load what it is and that Splunk AI is used live
+        "kicker": "SPLUNK AGENTIC OPS HACKATHON  ·  OBSERVABILITY TRACK",
         "title": "kassi",
         "title_size": 150,
         "accent": "Divines disaster, crafts the cure.",
         "body": [
             "An AI agent that load-tests a code change, finds the regression in Splunk,",
-            "and writes the fix. Driver, writer, and auditor all run on a local 8B model.",
+            "and writes the fix — driver, writer, and auditor all on a local 8B model.",
+            "Live at runtime: the official Splunk MCP Server + the Splunk AI Toolkit.",
         ],
     },
-    {
-        "kicker": "THE PROBLEM",
-        "big": "~80%",
+    {  # 2. THE PITCH — the one slide a judge needs; problem + loop + Splunk proof
+        "kicker": "WHY  ·  AND WHAT IT DOES, ALL ON SPLUNK AI AT RUNTIME",
+        "title": "~80% of outages trace to a change.",
+        "title_size": 72,
         "body": [
-            "of production outages are self-inflicted: they trace back to a change.",
-            "The warning is usually there. It just isn't believed, because a change's",
-            "real impact only surfaces in server-side telemetry, after something runs it.",
+            "The warning is there; it isn't believed, because the impact only shows up in",
+            "server-side telemetry after something exercises the change. kassi closes the loop:",
+            "",
+            "1.  Grafana k6 MCP Server drives real load at the changed endpoint",
+            "2.  the official Splunk MCP Server reads the server-side truth",
+            "3.  the Splunk AI Toolkit forecasts the trend and flags the anomaly",
+            "4.  a local model writes the cited analysis and the remediation fix",
         ],
     },
-    {
-        "kicker": "WHAT KASSI DOES",
-        "title": "It closes the loop.",
+    {  # 3. DEMO transition
+        "kicker": "LIVE  ·  NOTHING CANNED",
+        "title": "Watch it run.",
+        "accent": "Real app, real k6, the official Splunk MCP Server, a local model.",
+        "body": ["Two changes. Two different failure signatures. Same agent, same dashboard."],
+    },
+    {  # 4. SCENARIO 1 — errors, with a root cause only Splunk shows
+        "kicker": "SCENARIO 1   ·   petclinic   ·   POST /api/visits",
+        "title": "A write-lock under load",
+        "accent": "58.8% 5xx",
         "body": [
-            "1.   exercise the affected endpoints with real k6 load",
-            "2.   read the server-side truth from Splunk over the exact window",
-            "3.   name the root cause, with cited evidence and an ML forecast",
-            "4.   write the fix: a validated remediation diff",
+            "What the client sees: more than half of requests fail under concurrency.",
+            "What only Splunk reveals: root cause  database is locked, 1,797 times.",
+            "kassi's fix: enable WAL / shorten the held write transaction.",
         ],
-        "accent": "A change comes in. A fix goes out.",
     },
-    {
-        "kicker": "HOW IT WORKS",
-        "title": "One agent, two MCP servers.",
+    {  # 5. SCENARIO 2 — the opposite signature: latency, ZERO errors
+        "kicker": "SCENARIO 2   ·   storefront   ·   POST /api/checkout",
+        "title": "An N+1 query",
+        "accent": "latency, and zero errors",
         "body": [
-            "A Burr state machine served over MCP: the graph's edges are the only legal",
-            "moves, and every step is sealed to a hash-chained, auditable ledger.",
-            "Grafana k6 drives the load. The official Splunk MCP Server reads the truth.",
+            "What the client sees: it just got slower. No errors at all.",
+            "What only Splunk reveals: server-side db_time on the changed endpoint.",
+            "Invisible to the error rate — and obvious in the client-plus-server join.",
         ],
     },
-    {
-        "kicker": "THE 8B STORY",
-        "title": "One local model does all of it.",
+    {  # 6. CLOSE — why it wins, the differentiators a judge scores
+        "kicker": "WHY KASSI",
+        "title": "Fully local. Fully audited.",
         "body": [
-            "Granite 4.1 drives the state machine, authors the k6 script, writes the cited",
-            "analysis, and proposes the fix. Granite Guardian 4.1 audits it for groundedness.",
-            "First ISO/IEC 42001-certified open LLM. On-prem, air-gapped, no per-token cost.",
-        ],
-        "accent": "Driver, writer, auditor: all local.",
-    },
-    {
-        "kicker": "TWO MODELS, TWO ROLES",
-        "title": "The writer isn't trusted on its word.",
-        "body": [
-            "The writer model explains the regression, grounded on the measured evidence.",
-            "A separate Guardian model judges whether that analysis contradicts the",
-            "telemetry it cites. The verdict is sealed to the ledger before it publishes.",
+            "Driver, writer, and auditor are one local 8B family: Granite 4.1 + Guardian 4.1,",
+            "the first ISO/IEC 42001-certified open LLM. On-prem, air-gapped, no per-token cost.",
+            "Two MCP servers, deep usage. Splunk's own ML does the forecasting.",
+            "And the agent is observable too: its state-machine walk streams back to Splunk.",
         ],
     },
-    {
-        "kicker": "AGENTIC OPS, LITERALLY",
-        "title": "The agent is observable too.",
-        "body": [
-            "kassi reads Splunk to observe your service. Then it publishes its own",
-            "state-machine walk back to Splunk: one event per phase, keyed by app_id.",
-            "The dashboard shows not just what the change did, but how the agent decided.",
-        ],
-    },
-    {
-        "kicker": "A VERIFIED RUN",
-        "title": "REGRESSION",
-        "title_color": ACCENT,
-        "body": [
-            "POST /api/visits   ·   58.8% 5xx   ·   p95 283 ms   ·   cause: database is locked",
-            "forecast p95 280 ms   ·   1 anomalous bucket   ·   screened: grounded",
-            "remediation: enable WAL / shorten the held write transaction",
-        ],
-    },
-    {
+    {  # 7. SIGN-OFF
         "kicker": "",
         "title": "kassi",
         "title_size": 150,
         "accent": "Divines disaster, crafts the cure.",
-        "body": ["Built for the Splunk Agentic Ops Hackathon."],
+        "body": ["Observability  ·  Best Use of Splunk MCP Server  ·  Best Use of Developer Tools"],
     },
 ]
 
@@ -178,6 +164,8 @@ def render(slide: dict, index: int, total: int) -> Image.Image:
 
 def main() -> None:
     DECK.mkdir(parents=True, exist_ok=True)
+    for stale in DECK.glob("slide-*.png"):  # drop any leftover frames from a longer prior deck
+        stale.unlink()
     total = len(SLIDES)
     for i, slide in enumerate(SLIDES, 1):
         render(slide, i, total).save(DECK / f"slide-{i:02d}.png")

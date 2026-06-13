@@ -30,77 +30,74 @@ uv run python scripts/setup_dashboard.py
 Keep two windows ready: a **terminal** and a **browser** on the dashboard
 (`http://localhost:8000/en-US/app/search/kassi_overview`).
 
-## Recording sequence
+## Recording sequence (target: under 3:00)
 
-### 1. The agent's shape  (~20s)
+The slide deck (`docs/deck/`) carries the title, the one pitch slide, the two scenario cards, and
+the close. Intercut the live runs below. **Editing note:** a real run is a few minutes of
+wall-clock; record it, then speed it up (6-10x) or cut to the streaming cards + the verdict line.
+Judges need to *see Splunk queried live* (the #1 disqualifier is simulated Splunk), so keep the
+k6/Splunk MCP activity and the dashboard on screen.
+
+### 0. Open (slides 1-2, ~20s)
+Title card, then the pitch slide. Optional quick cutaway: `uv run kassi render` (the 16-phase
+state machine) while you say "a Burr state machine over MCP; the edges are the only legal moves,
+every step sealed to a hash-chained ledger."
+
+### 1. Scenario 1 — errors with a hidden cause (slide 4, ~60s) — the headline
+Local Granite *drives* the run, one phase per turn:
 
 ```bash
-uv run kassi render      # the state machine: 16 phases, only legal edges
-uv run kassi arcana      # the Major Arcana: a card per phase
-```
-
-Say: "kassi is a Burr state machine served over MCP. The graph's edges are the only legal moves,
-and every step is sealed to a hash-chained ledger."
-
-### 2. Granite drives a real run, end to end  (~90s) — the headline
-
-Start the target app (a healthy petclinic plus a flawed `POST /api/visits`), then let the local
-Granite model drive:
-
-```bash
-# terminal A: start the target (leave running)
+# terminal A: start the target (healthy petclinic + a flawed POST /api/visits); leave running
 SPLUNK_INDEX=web uv run --with fastapi --with uvicorn --with httpx \
   python examples/petclinic/app.py serve
 
 # terminal B: Granite drives the FSM step by step
-uv run kassi pilot \
-  --intent "load test recording a new visit" \
-  --repo-path examples/petclinic \
-  --target-base-url http://127.0.0.1:8400 \
-  --splunk-index web
+uv run kassi pilot --intent "load test recording a new visit" \
+  --repo-path examples/petclinic --target-base-url http://127.0.0.1:8400 --splunk-index web
 ```
 
-Say, as the cards stream by: "The local Granite model is *driving* the state machine, one phase
-per turn, doing the work as it goes: it authors the k6 script, runs real load through the k6 MCP
-server, correlates with Splunk, and writes a cited analysis. At `The Hanged Man` it hands off to
-Granite Guardian, a second model, to audit the analysis for groundedness. Then `Judgement`: the
-verdict, sealed to the ledger." End on the verdict line (REGRESSION, `database is locked`, the
-remediation).
+Say, over the streaming cards: "The local Granite model is *driving* the state machine, doing the
+work as it goes: it authors the k6 script, runs real load through the k6 MCP server, correlates
+with the official Splunk MCP Server, and forecasts the trend with the Splunk AI Toolkit. At The
+Hanged Man it hands off to Granite Guardian to audit the analysis. Then Judgement." End on the
+verdict: REGRESSION, `database is locked`, the remediation. **More than half the requests fail,
+but only Splunk shows why.**
 
-### 3. The Splunk dashboard  (~40s)
+### 2. Scenario 2 — the opposite signature (slide 5, ~45s)
+A different change, a different failure. storefront's `POST /api/checkout` gets *slower with zero
+errors* (an N+1 query), invisible to the client, visible only in server-side `db_time`:
 
-Switch to the browser, refresh the dashboard. Point at:
-- **the reading** — `/api/visits`, client vs server p95, `database is locked`, the forecast,
+```bash
+uv run python scripts/verify_scenario.py storefront
+```
+
+Say: "Same agent, same dashboard, a completely different signature. The client sees no errors at
+all, just latency. The Splunk join surfaces the server-side `db_time` on the changed endpoint.
+The regression is invisible to the error rate and obvious in the correlation." (This is the
+fast, scripted path; the model still authors the analysis and Guardian still audits it.)
+
+### 3. The Splunk dashboard (~30s)
+Switch to the browser (`.../app/search/kassi_overview`). Point at:
+- **the reading** — client vs server p95, the root cause, the forecast,
 - **the agent's walk** — the run's own state-machine trace (The Fool → Judgement) with each
   phase's outcome and tool calls, keyed by Burr's `app_id`,
 - **errors by endpoint** — the server-side truth from `index=web`.
 
 Say: "kassi reads Splunk to observe your service, then publishes its *own* execution back to
-Splunk. The dashboard shows not just what the change did, but how the agent reached the verdict."
+Splunk. You see not just what the change did, but how the agent reached the verdict."
 
-### 4. The audit trail  (~20s)
+### 4. Close (slide 6-7, ~25s)
+Optional cutaway: `uv run kassi verify <app-id>` (the tamper-proof ledger). Say: "Driver, writer,
+and auditor all run on one local 8B model, Granite 4.1 and Guardian 4.1, the first ISO/IEC
+42001-certified open LLM: on-prem, air-gapped, no per-token cost." End on the sign-off card.
 
-```bash
-uv run kassi sessions ls
-uv run kassi verify <app-id>     # confirm the ledger was not tampered with
-```
-
-Say: "Every step and every refusal is on an immutable, hash-chained ledger, so the agent is safe
-to run unattended. Driver, writer, and auditor all run on one local 8B model: on-prem,
-air-gapped, no per-token cost."
-
-## Alternative: diff-mode (fastest, fully scripted)
-
-If you want the most reliable single command (Burr's executor drives; the model still authors and
-audits), use the diff-mode scenario instead of the pilot:
-
-```bash
-uv run python scripts/verify_scenario.py petclinic
-# or the other signatures: storefront | feed | gateway | orders
-```
-
-It starts the app, drives the whole FSM against live Splunk, and prints the verdict, the
-correlation, the anomaly scan, and the cited analysis. The dashboard updates the same way.
+## Notes
+- Both scenarios can also run via the **pilot** (Granite drives) or **`verify_scenario.py`** (Burr
+  drives; the model still authors + audits). Pilot is the wow; `verify_scenario.py` is faster and
+  the most reliable for a clean take. Other signatures: `feed` (latency rising over the run, where
+  the AI Toolkit forecast earns its keep), `gateway` (429 throttling), `orders` (504 cascade).
+- Warm k6 first (`uv run kassi warm-k6`) so the first run does not stall.
+- Record the dashboard right after a run (the errors-by-endpoint panel is a 60-minute window).
 
 ## If something misbehaves
 
