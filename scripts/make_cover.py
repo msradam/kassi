@@ -113,11 +113,16 @@ def vgradient(size: tuple[int, int], top: tuple, bot: tuple) -> Image.Image:
     return base
 
 
-def make_cover(palette: str = DEFAULT_PALETTE, out: Path | None = None) -> None:
+def make_cover(
+    palette: str = DEFAULT_PALETTE, out: Path | None = None, size: tuple[int, int] = (1280, 720)
+) -> None:
     p = PALETTES[palette]
     accent, dim, frame = p["accent"], p["dim"], p["frame"]
     s = 2  # supersample, then downscale for crisp text
-    W, H = 1280 * s, 720 * s
+    W, H = size[0] * s, size[1] * s
+    # The composition is tuned for a 720-tall canvas; on a taller (e.g. 3:2) canvas, center the
+    # text block vertically and keep the credit pinned to the bottom edge.
+    dy = (H - 720 * s) // 2
     img = vgradient((W, H), p["bg_top"], p["bg_bot"])
     d = ImageDraw.Draw(img)
 
@@ -125,7 +130,7 @@ def make_cover(palette: str = DEFAULT_PALETTE, out: Path | None = None) -> None:
     for inset, width, col in ((26 * s, 2 * s, dim), (34 * s, 1 * s, frame)):
         d.rectangle((inset, inset, W - inset, H - inset), outline=col, width=width)
 
-    # right-hand hero: the recolored tarot icon
+    # right-hand hero: the recolored tarot icon (vertically centered on the canvas)
     icon = recolor_icon(accent)
     ih = 338 * s
     iw = round(icon.width * ih / icon.height)
@@ -134,32 +139,32 @@ def make_cover(palette: str = DEFAULT_PALETTE, out: Path | None = None) -> None:
     img.paste(icon, (icon_cx - iw // 2, (H - ih) // 2 - 4 * s), icon)
 
     x = 78 * s
-    d.text((x, 96 * s), "SPLUNK AGENTIC OPS HACKATHON · OBSERVABILITY", font=font("mono", 19 * s), fill=dim)
-    d.text((x, 150 * s), "kassi", font=font("serif", 168 * s), fill=WHITE)
-    d.text((x, 360 * s), "Divinate your stack's performance.", font=font("serif_italic", 43 * s), fill=accent)
+    d.text((x, dy + 96 * s), "SPLUNK AGENTIC OPS HACKATHON · OBSERVABILITY", font=font("mono", 19 * s), fill=dim)
+    d.text((x, dy + 150 * s), "kassi", font=font("serif", 168 * s), fill=WHITE)
+    d.text((x, dy + 360 * s), "Divines disaster, crafts the cure.", font=font("serif_italic", 43 * s), fill=accent)
 
     sub = font("sans", 27 * s)
     lines = [
-        "An agent draws a load test from a code change, then explains",
-        "it with Splunk telemetry. One audited workflow, two MCP servers.",
+        "An AI agent load-tests a code change, finds the regression in",
+        "Splunk, then writes the fix. Audited end to end, on a local model.",
     ]
     for i, line in enumerate(lines):
-        d.text((x + 2 * s, (432 + i * 38) * s), line, font=sub, fill=GRAY)
+        d.text((x + 2 * s, dy + (432 + i * 38) * s), line, font=sub, fill=GRAY)
 
     d.text(
-        (x + 2 * s, 548 * s),
-        "k6   ·   Splunk   ·   Burr   ·   Theodosia   ·   MCP",
+        (x + 2 * s, dy + 548 * s),
+        "k6   ·   Splunk   ·   Granite   ·   Burr   ·   Theodosia   ·   MCP",
         font=font("mono", 22 * s),
         fill=(120, 128, 142),
     )
     d.text(
-        (x, 664 * s),
+        (x, H - 56 * s),
         "Tarot icon: Eucalyp / Noun Project (CC BY 3.0)",
         font=font("sans", 15 * s),
         fill=(110, 116, 130),
     )
 
-    img.resize((1280, 720), Image.LANCZOS).save(out or ASSETS / "cover.png")
+    img.resize(size, Image.LANCZOS).save(out or ASSETS / "cover.png")
 
 
 def main() -> None:
@@ -167,7 +172,8 @@ def main() -> None:
     for shot in sorted(ASSETS.glob("shot-*.png")):
         autocrop(shot)
     make_cover(palette)
-    print(f"wrote cover.png ({palette})")
+    make_cover(palette, out=ASSETS / "cover-3x2.png", size=(1280, 853))  # Devpost 3:2
+    print(f"wrote cover.png + cover-3x2.png ({palette})")
 
 
 if __name__ == "__main__":
