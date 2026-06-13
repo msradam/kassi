@@ -251,6 +251,11 @@ convenience, not the shipped integration.
   to 1 VU. `run_test` must pass `vus` + `duration` as tool args (see `_load_profile`);
   the generated script's options are vestigial. The generate prompt tells the model to
   keep think time minimal so those VUs produce real concurrency.
+- **`run_test` is bounded by a timeout (`_run_timeout`, duration + 120s).** An authored
+  script can wedge k6 so it runs but never exits cleanly, and the MCP call would then block
+  forever (observed with a model-authored script on the feed target). On timeout `run_test`
+  re-runs the deterministic `scaffold_script` once, so a run degrades instead of hanging.
+  Keep any new upstream call that can block under a timeout.
 - **`run_script` returns the k6 summary as `stdout` text, not structured `metrics`.**
   `parse.parse_run` falls back to `parse_run_stdout`, which scrapes `http_reqs` / `p(95)`
   / failure-rate from the default k6 summary. Do not reintroduce a custom `handleSummary`
