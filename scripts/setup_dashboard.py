@@ -70,6 +70,19 @@ def ensure_hec_token() -> str:
     return token
 
 
+def install_stylesheet() -> None:
+    """Copy the cover-matching CSS into the search app's static dir (referenced by the
+    dashboard's `stylesheet` attribute). Best-effort: skipped if SPLUNK_HOME isn't local."""
+    splunk_home = os.environ.get("SPLUNK_HOME") or os.path.expanduser("~/splunk")
+    static = Path(splunk_home) / "etc" / "apps" / "search" / "appserver" / "static"
+    if not static.parent.parent.exists():
+        print(f"stylesheet: skipped (no app dir at {static}); copy kassi.css there manually")
+        return
+    static.mkdir(parents=True, exist_ok=True)
+    (static / "kassi.css").write_text((ROOT / "docs" / "dashboard" / "kassi.css").read_text())
+    print(f"stylesheet: installed kassi.css -> {static} (run /en-US/_bump if iterating)")
+
+
 def install_dashboard() -> None:
     xml = (ROOT / "docs" / "dashboard" / "kassi_overview.xml").read_text()
     status, _ = _req(
@@ -92,6 +105,7 @@ def install_dashboard() -> None:
 if __name__ == "__main__":
     ensure_index()
     token = ensure_hec_token()
+    install_stylesheet()
     install_dashboard()
     web = MGMT.replace("8089", "8000").replace("https://", "http://")
     print("\nDashboard:", f"{web}/en-US/app/search/{DASHBOARD}")

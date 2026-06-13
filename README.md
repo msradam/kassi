@@ -322,6 +322,8 @@ uv run python scripts/verify_scenario.py feed   # or petclinic | storefront | ga
 
 ## Dashboard
 
+<p align="center"><img src="docs/assets/shot-dashboard.png" alt="kassi dashboard: change impact read from Splunk" width="820" /></p>
+
 The `report` phase publishes each run (verdict, k6 client metrics, the server-side correlation,
 the forecast, the root cause) to `index=kassi_runs` over HEC, so the client-and-server join lives
 in a Splunk dashboard, not just the terminal. The agent stays CLI/MCP; Splunk is the reporting

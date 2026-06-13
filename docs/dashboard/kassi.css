@@ -1,0 +1,86 @@
+/* kassi dashboard skin: match the cover image (near-black purple, magenta, serif).
+   Loaded by docs/dashboard/kassi_overview.xml via the dashboard `stylesheet` attribute;
+   installed into the app's appserver/static by scripts/setup_dashboard.py. */
+
+:root {
+  --kassi-magenta: #f456a1;
+  --kassi-magenta-dim: #b05c86;
+  --kassi-bg-top: #170d15;
+  --kassi-bg-bot: #0b070c;
+  --kassi-ink: #e9d9e4;
+}
+
+/* page + dashboard surfaces -> the cover's dark purple-black gradient */
+body.simplexml,
+.dashboard-body,
+.dashboards-view,
+.main-section-body,
+.view-container,
+.preview-panel {
+  background-color: var(--kassi-bg-bot) !important;
+  background-image: linear-gradient(180deg, var(--kassi-bg-top), var(--kassi-bg-bot)) !important;
+}
+
+/* a thin magenta frame around the board, like the cover's border */
+.dashboard-body {
+  border: 1px solid rgba(244, 86, 161, 0.45) !important;
+  border-radius: 6px !important;
+  padding: 10px 14px !important;
+}
+
+/* the dashboard title: white serif wordmark like "kassi" on the cover */
+.dashboard-title,
+.dashboard-header h1,
+h1.dashboard-title {
+  font-family: Georgia, Didot, "Times New Roman", serif !important;
+  font-weight: 400 !important;
+  color: #ffffff !important;
+  letter-spacing: 0.3px !important;
+}
+.dashboard-description {
+  font-family: Georgia, serif !important;
+  font-style: italic !important;
+  color: var(--kassi-magenta) !important;
+}
+
+/* panel titles: serif, dim ink */
+h3.dashboard-element-title,
+.panel-title,
+.dashboard-panel h2,
+.dashboard-panel h3 {
+  font-family: Georgia, serif !important;
+  font-weight: 400 !important;
+  color: var(--kassi-ink) !important;
+  letter-spacing: 0.2px !important;
+}
+
+/* panels: translucent dark with a faint magenta hairline */
+.dashboard-panel,
+.dashboard-element,
+.panel-body,
+.splunk-view {
+  background: rgba(23, 13, 21, 0.55) !important;
+  border-color: rgba(244, 86, 161, 0.18) !important;
+  box-shadow: none !important;
+}
+.dashboard-row,
+.dashboard-cell {
+  background: transparent !important;
+}
+
+/* single-value numbers: serif, to echo the wordmark */
+.single-value text,
+.splunk-single text,
+.single-value .single-result {
+  font-family: Georgia, serif !important;
+}
+
+/* table: dark, magenta header underline */
+.table thead th {
+  font-family: Georgia, serif !important;
+  color: var(--kassi-magenta) !important;
+  border-bottom: 1px solid rgba(244, 86, 161, 0.4) !important;
+}
+.table td {
+  color: var(--kassi-ink) !important;
+}

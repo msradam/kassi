@@ -1,4 +1,4 @@
-<dashboard theme="dark" version="1.1">
+<dashboard theme="dark" version="1.1" stylesheet="kassi.css">
   <label>kassi: change impact, read from Splunk</label>
   <description>Client-side k6 metrics joined to the target's server-side telemetry over the exact test window. Each run is published to index=kassi_runs by kassi's report phase.</description>
 
@@ -106,6 +106,7 @@
           <latest>now</latest>
         </search>
         <option name="charting.chart">line</option>
+        <option name="charting.backgroundColor">transparent</option>
         <option name="charting.axisTitleX.text">run</option>
         <option name="charting.axisTitleY.text">p95 (ms)</option>
         <option name="charting.chart.nullValueMode">connect</option>
@@ -124,6 +125,7 @@
           <latest>now</latest>
         </search>
         <option name="charting.chart">column</option>
+        <option name="charting.backgroundColor">transparent</option>
         <option name="charting.axisTitleX.text">endpoint</option>
         <option name="charting.axisTitleY.text">count / ms</option>
         <option name="charting.fieldColors">{"errors":0xf456a1,"requests":0x6b6b78,"p95_ms":0xf8be34}</option>
