@@ -60,9 +60,9 @@ change (a git diff) or a plain-language intent and it:
 5. writes a cited, grounded analysis (root cause, evidence, recommendation) and a **proposed
    remediation**: a minimal unified diff that fixes the root cause, written from the diff that
    introduced it,
-6. screens that analysis with a separate IBM Granite Guardian model, an independent check that
-   the writeup does not contradict the telemetry it cites, and seals the pass/fail to the ledger,
-   then reports the combined client plus server verdict. The model narrates each phase as a tarot
+6. screens that analysis with a separate IBM Granite Guardian 4.1 model, an independent check
+   that no claim is unsupported by or contradicts the telemetry it cites, and seals the pass/fail
+   to the ledger, then reports the combined client plus server verdict. The model narrates each phase as a tarot
    reading; every upstream tool call is on a provenance record; the run is published to a Splunk
    dashboard.
 
@@ -137,13 +137,15 @@ and recommendation.
   and a deterministic analysis, so a run never fails for lack of a model.
 - **Two models, two roles: a writer and an auditor.** The analysis is written by Granite 4.1
   (the writer), then a separate phase, `screen`, hands that analysis and the evidence it cites to
-  IBM Granite Guardian (the auditor) to judge groundedness: does the writeup contradict the
-  measured telemetry it claims to be based on? Guardian returns a pass/fail that is sealed to the
-  report ledger. So the writer model is not trusted on its own word; an independent model checks
-  it before the verdict is published. Guardian fires on the failure that matters most for a tool
-  meant to be believed, an analysis that reports the system as healthy when it was not, and the
-  phase degrades to "unavailable" (never blocks) when Guardian is off. Different state-machine
-  phase, different model: the FSM makes that composition clean.
+  IBM Granite Guardian 4.1 (the auditor: an 8B model fine-tuned from the same Granite 4.1 base,
+  Apache-2.0) to judge groundedness: does the writeup include any claim unsupported by, or
+  contradicting, the measured telemetry it was grounded on? Guardian returns a yes/no that is
+  sealed to the report ledger. So the writer model is not trusted on its own word; an independent
+  model checks it before the verdict is published, catching both an analysis that contradicts the
+  numbers and one that invents a cause the telemetry never showed. The phase degrades to
+  "unavailable" (never blocks) when Guardian is off. Different state-machine phase, different
+  model: the FSM makes that composition clean, and the whole loop, writer and auditor alike,
+  stays within the open Granite 4.1 family on one local host.
 - **An 8B model runs the whole loop, on-prem.** kassi defaults to IBM Granite 4.1 (8B) served
   locally by Ollama, the first open-source LLM certified to ISO/IEC 42001 (the AI management
   system standard), Apache-2.0 licensed and shipped with IBM's IP indemnity. Every model task
@@ -192,9 +194,9 @@ and recommendation.
 - The whole loop, including the remediation, runs on a single local 8B model (IBM Granite 4.1,
   the first ISO/IEC 42001-certified open-source LLM), so kassi is deployable on-prem or
   air-gapped with no code or telemetry leaving the building and no per-token cost.
-- The published analysis is screened by an independent model. A separate Granite Guardian phase
-  judges whether the writeup is grounded in the telemetry it cites and seals that verdict to the
-  ledger, so the writer model is audited by a second model rather than trusted on its own word.
+- The published analysis is screened by an independent model. A separate Granite Guardian 4.1
+  phase judges whether the writeup is grounded in the telemetry it cites and seals that verdict to
+  the ledger, so the writer model is audited by a second model rather than trusted on its own word.
 
 ## What we learned
 

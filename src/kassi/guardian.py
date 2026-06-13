@@ -1,29 +1,56 @@
-"""Independent groundedness screen via IBM Granite Guardian.
+"""Independent groundedness screen via IBM Granite Guardian 4.1.
 
-After the writer model (Granite 4.1) composes the run analysis, a separate Guardian model judges
-whether that analysis is faithful to the evidence it was grounded on. Guardian is prompted with
-the risk name "groundedness", which its own chat template selects: the evidence goes in a context
-message, the analysis in an assistant message, and the model returns a single token, "Yes" when the
-text makes claims unsupported by or contradicting the context, "No" when it is grounded. So a
-published analysis carries an independent check from a second model, not just the writer's own word.
+After the writer model (Granite 4.1) composes the run analysis, a separate Guardian model, also
+Granite 4.1 (`granite-guardian-4.1-8b`, fine-tuned from the same base, Apache-2.0), judges whether
+that analysis is faithful to the evidence it was grounded on. The evidence is passed as a document,
+the analysis as the assistant message being judged, and a final user message carries the guardian
+block: a judge instruction, the groundedness criterion, and a scoring schema. The model returns
+``<score>yes</score>`` when the analysis is ungrounded (makes claims unsupported by or contradicting
+the document) and ``<score>no</score>`` when it is grounded. So a published analysis carries an
+independent check from a second model, not just the writer's own word. The verdict is recorded to
+the report ledger.
 
-Granite Guardian on Ollama is the 3.x line (`granite3-guardian`); it is Apache-2.0 and from the
-same open Granite family as the 4.1 writer model. The verdict is recorded to the report ledger.
+Prompt strings are from IBM's granite-guardian cookbook for 4.1.
 """
 
 from __future__ import annotations
 
 import os
+import re
 
 import httpx
 
-DEFAULT_GUARDIAN_MODEL = "granite3-guardian:8b"
+DEFAULT_GUARDIAN_MODEL = "hf.co/ibm-granite/granite-guardian-4.1-8b-GGUF:Q4_K_M"
 GROUNDEDNESS = "groundedness"
+
+_CRITERIA = (
+    "A text is considered ungrounded or unfaithful if it includes information lacking support "
+    "from, or directly contradicting, the provided document(s)."
+)
+_SCHEMA = "If the last assistant's text meets the criteria, return 'yes'; otherwise, return 'no'."
+_JUDGE_NOTHINK = (
+    "As a judge agent, assess whether the provided text meets the given judging criteria using "
+    "all available information, including conversations, documents, and tools. Provide your score "
+    "immediately without explanation."
+)
+_GUARDIAN_BLOCK = f"{_JUDGE_NOTHINK}\n\n### Criteria: {_CRITERIA}\n\n### Scoring Schema: {_SCHEMA}"
+_SCORE = re.compile(r"<score>\s*(.*?)\s*</score>", re.DOTALL)
 
 
 def guardian_configured() -> bool:
     """On by default; set KASSI_GUARDIAN=0 to skip the screen (it then degrades to unavailable)."""
     return os.environ.get("KASSI_GUARDIAN", "1").strip().lower() not in {"0", "false", "no", ""}
+
+
+def _parse_score(text: str) -> str | None:
+    """The verdict token, from a ``<score>`` tag if present, else a bare yes/no reply."""
+    tags = _SCORE.findall(text or "")
+    token = (tags[-1] if tags else (text or "")).strip().lower()
+    if token.startswith("yes"):
+        return "yes"
+    if token.startswith("no"):
+        return "no"
+    return None
 
 
 class Guardian:
@@ -43,12 +70,10 @@ class Guardian:
         gracefully like the other model-backed phases."""
         payload = {
             "model": self.model,
-            # The Guardian chat template selects the risk from the system string; "groundedness"
-            # routes the context+assistant messages into the faithfulness criterion.
-            "system": GROUNDEDNESS,
             "messages": [
-                {"role": "context", "content": context},
+                {"role": "document", "content": context},
                 {"role": "assistant", "content": response},
+                {"role": "user", "content": _GUARDIAN_BLOCK},
             ],
             "stream": False,
             "options": {"temperature": 0},
@@ -56,7 +81,7 @@ class Guardian:
         try:
             resp = httpx.post(f"{self.host}/api/chat", json=payload, timeout=self.timeout)
             resp.raise_for_status()
-            label = (resp.json().get("message", {}).get("content") or "").strip()
+            raw = (resp.json().get("message", {}).get("content") or "").strip()
         except httpx.HTTPError as exc:
             return {
                 "available": False,
@@ -65,11 +90,12 @@ class Guardian:
                 "model": self.model,
                 "error": str(exc),
             }
-        # Guardian emits "Yes" when the text is ungrounded/unfaithful, "No" when it is grounded.
+        # Guardian scores "yes" when the text is ungrounded/unfaithful, "no" when it is grounded.
+        score = _parse_score(raw)
         return {
             "available": True,
-            "grounded": label.lower().startswith("no"),
-            "label": label,
+            "grounded": None if score is None else score == "no",
+            "label": score or raw,
             "risk": GROUNDEDNESS,
             "model": self.model,
         }
