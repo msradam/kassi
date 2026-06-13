@@ -1,8 +1,8 @@
-# kassi: the AI agent that divines the outage before you ship it
+# kassi: the AI agent that divines the outage and writes the cure
 
-> It reads the omens in your telemetry to divine what your next change will break, then proves
-> it in Splunk, before production does. Cassandra foresaw disaster and was never believed;
-> kassi's prophecy comes with proof.
+> It reads the omens in your telemetry to divine what your next change will break, then writes
+> the fix, a remediation diff, before production ever sees it. Cassandra foresaw disaster and
+> was never believed; kassi's prophecy comes with proof, and a patch.
 
 **Elevator pitch.** Roughly 80% of production outages are self-inflicted, they trace back to a
 change. The warning is usually there; it just isn't believed, because a change's real impact
@@ -58,8 +58,15 @@ change (a git diff) or a plain-language intent and it:
    (with core `predict` as a fallback) and `anomalydetection` over that window to locate the
    saturation onset statistically, and
 5. reports a combined client plus server verdict with a cited, grounded analysis (root cause,
-   evidence, recommendation), the model narrating each phase as a tarot reading, a provenance
-   record of every upstream tool call, and the run published to a Splunk dashboard.
+   evidence, recommendation) and a **proposed remediation**: a minimal unified diff that fixes
+   the root cause, written from the diff that introduced it. The model narrates each phase as a
+   tarot reading; every upstream tool call is on a provenance record; the run is published to a
+   Splunk dashboard.
+
+So the loop closes both ways: a change comes in, and a change that fixes it goes out. In the
+verified petclinic run, kassi diagnosed `database is locked` and proposed the right minimal
+fix, a one-line diff removing the `time.sleep` held inside the write transaction, the exact
+cause of the lock contention.
 
 The driving agent (Claude Code, Cursor, any MCP client) never sees k6 or Splunk. It sees
 one tool, `step(action, inputs)`, and takes the workflow one move at a time.
@@ -154,6 +161,10 @@ and recommendation.
   **IBM Granite 4.1** model that grounds every fact on the run's evidence documents via its
   native document role, so the writeup is attributable and resistant to hallucination, and it
   runs fully offline with no hosted-API dependency.
+- The loop closes both ways: kassi does not just diagnose, it proposes the fix. From the diff
+  that introduced the regression and the correlated root cause, the model writes a minimal
+  unified **remediation diff** (for review, not auto-applied), so a change comes in and a change
+  that fixes it goes out.
 
 ## What we learned
 

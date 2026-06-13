@@ -9,10 +9,11 @@ change, and the warning usually exists but can't be proven before it ships. kass
 loop: point it at a code change (a git diff) or a plain-language intent, and it exercises the
 affected endpoints (real traffic through the Grafana k6 MCP server), reads the target's
 **server-side telemetry from Splunk** over the exact window, and explains what the change did
-and *why*, a **cited root-cause analysis** (evidence and a recommended fix), an ML forecast of
-the trend, and a verdict published back to a Splunk dashboard. Every step is sealed to an
-auditable, hash-chained ledger, so the prophecy comes with proof. (Named for Kassandra, who
-foresaw what others would not believe.)
+and *why*, a **cited root-cause analysis** (evidence and a fix), an ML forecast of the trend,
+and a **proposed remediation diff** that fixes the root cause, plus a verdict published back to
+a Splunk dashboard. A change comes in, a change that fixes it goes out, every step sealed to an
+auditable, hash-chained ledger, so the prophecy comes with proof and a patch. (Named for
+Kassandra, who foresaw what others would not believe.)
 
 Named for the seer who saw what others would not believe, kassi reads a change and
 foretells how it behaves under load. The workflow is themed as a tarot draw: the agent
@@ -213,14 +214,15 @@ stateDiagram-v2
   buckets. The saturation onset is found by Splunk's ML, not by a fixed threshold in kassi,
   and the forecast band and anomalous buckets fold into the verdict. Non-blocking, like the
   other Splunk phases.
-- `report` produces two things from the recorded facts: a practical **analysis** (summary,
-  affected endpoints, root cause, evidence with a source citation per fact, and a
-  recommendation), grounded on the evidence documents so it stays to the measured numbers;
-  and the tarot **narration**, one line per phase. Both fall back to deterministic text when
-  the model is absent. Every upstream tool call is logged to `mcp_provenance`, and the run
-  (verdict, metrics, recommendation, analysis) is published to Splunk for the dashboard. The
-  work-phases stay deterministic; the model authors only the script, the analysis, and the
-  narration.
+- `report` produces, from the recorded facts: a practical **analysis** (summary, affected
+  endpoints, root cause, evidence with a source citation per fact, and a recommendation),
+  grounded on the evidence documents so it stays to the measured numbers; a **proposed
+  remediation** (a minimal unified diff that fixes the root cause, written from the diff that
+  introduced it, in diff mode) for human review; and the tarot **narration**, one line per
+  phase. All fall back to deterministic text when the model is absent. Every upstream tool call
+  is logged to `mcp_provenance`, and the run is published to Splunk for the dashboard. The
+  work-phases stay deterministic; the model authors only the script, the analysis, the
+  remediation, and the narration, never the SPL.
 
 ## The Major Arcana
 

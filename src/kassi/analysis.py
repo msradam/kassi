@@ -10,6 +10,38 @@ from __future__ import annotations
 
 from typing import Any
 
+REMEDIATION_SYSTEM = (
+    "You are a site-reliability engineer proposing the smallest code fix for a load-induced "
+    "regression. You are given the diff that introduced the regression and its server-side root "
+    "cause. Output ONLY a unified diff (--- a/file, +++ b/file, @@ hunks) that fixes the root "
+    "cause with the minimal change, grounded strictly in the provided code. No prose, no markdown."
+)
+
+
+def remediation_documents(
+    diff_text: str, findings: dict[str, Any], recommendation: str = ""
+) -> list[tuple[str, str]]:
+    """The grounding for a remediation: the diff that introduced the regression, the
+    server-side root cause kassi correlated, and the recommended approach, so the fix targets
+    the real code and the real cause instead of an arbitrary line."""
+    docs: list[tuple[str, str]] = [("introducing diff", diff_text[:4000])]
+    te = findings.get("top_error") or {}
+    wp = findings.get("worst_path") or {}
+    cause = te.get("error_message") or "server-side regression"
+    docs.append(
+        (
+            "root cause",
+            f"dominant server error '{cause}'"
+            + (f" x{te.get('count')}" if te.get("count") else "")
+            + (f" on {wp.get('path')}" if wp.get("path") else "")
+            + " under concurrency (only appears under load)",
+        )
+    )
+    if recommendation:
+        docs.append(("recommended approach (apply this in the diff)", recommendation))
+    return docs
+
+
 ANALYSIS_SYSTEM = (
     "You are a site-reliability engineer writing a short, practical post-run analysis of a load "
     "test that has been correlated with the target's server-side telemetry. Use exactly these "

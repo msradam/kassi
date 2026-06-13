@@ -170,6 +170,10 @@ async def main() -> None:
         print("\n=== analysis ===")
         for line in report["analysis"].splitlines():
             print("   ", line)
+    if report.get("remediation"):
+        print("\n=== proposed remediation (diff) ===")
+        for line in report["remediation"].splitlines():
+            print("   ", line)
     print("\nthe reading:")
     for line in (report.get("narration") or arcana.reading(report["verdict"])).splitlines():
         print("   ", line)

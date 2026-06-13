@@ -131,6 +131,10 @@ async def main() -> None:
         print("\n=== analysis ===")
         for line in report["analysis"].splitlines():
             print("   ", line)
+    if report.get("remediation"):
+        print("\n=== proposed remediation (diff) ===")
+        for line in report["remediation"].splitlines():
+            print("   ", line)
 
 
 if __name__ == "__main__":

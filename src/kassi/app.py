@@ -523,6 +523,7 @@ async def detect_anomalies(state: State) -> State:
         "run_result",
         "correlation",
         "anomalies",
+        "diff_text",
         "validation_error",
         "error",
         "mode",
@@ -538,6 +539,7 @@ async def report(state: State) -> State:
     """Assemble the final report and have the model narrate the run as a tarot reading. Terminal action."""
     verdict = _verdict(state)
     analysis_text = await _analyze(state, verdict)
+    remediation = await _remediate(state, verdict)
     narration = await _narrate(state, verdict)
     findings = (state["correlation"] or {}).get("findings") or {}
     summary = {
@@ -558,6 +560,7 @@ async def report(state: State) -> State:
         "narration": narration,
         "analysis": analysis_text,
         "recommendation": analysis.recommend(findings),
+        "remediation": remediation,
         "verdict": verdict,
     }
     if publish.publish_configured():
@@ -693,6 +696,34 @@ async def _analyze(state: State, verdict: str) -> str:
     except LLMError as exc:
         log.warning("analysis_llm_failed", error=str(exc))
     return fallback
+
+
+async def _remediate(state: State, verdict: str) -> str | None:
+    """Propose a remediation: a minimal unified diff that fixes the correlated root cause,
+    grounded in the diff that introduced it. Only when we have that diff (diff mode) and a
+    server-side root cause to fix; otherwise None and the analysis carries the prose advice."""
+    diff_text = state["diff_text"]
+    findings = (state["correlation"] or {}).get("findings") or {}
+    if not (diff_text and (findings.get("top_error") or findings.get("worst_path"))):
+        return None
+    documents = analysis.remediation_documents(diff_text, findings, analysis.recommend(findings))
+    instruction = (
+        "Output a unified diff that fixes the root cause and clears the regression, applying the "
+        f"recommended approach. Do not remove the commit or the error handling. Run: {verdict}."
+    )
+    try:
+        text = await asyncio.to_thread(
+            make_llm().generate,
+            system=analysis.REMEDIATION_SYSTEM,
+            user=instruction,
+            documents=documents,
+        )
+        text = (text or "").replace("```diff", "").replace("```", "").strip()
+        if text and ("@@" in text or text.lstrip().startswith("---")):
+            return text
+    except LLMError as exc:
+        log.warning("remediation_llm_failed", error=str(exc))
+    return None
 
 
 async def _narrate(state: State, verdict: str) -> str:
