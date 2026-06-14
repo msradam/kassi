@@ -1,0 +1,1085 @@
+[
+  {
+    "system": "OB",
+    "service": "adservice",
+    "fault": "f3",
+    "case": "1",
+    "answer": "adservice",
+    "ranks": [
+      "adservice",
+      "cartservice",
+      "checkoutservice",
+      "currencyservice",
+      "emailservice"
+    ],
+    "ac1": 1,
+    "ac3": 1,
+    "ac5": 1,
+    "statespace_confirms": null,
+    "seconds": 3.8
+  },
+  {
+    "system": "OB",
+    "service": "adservice",
+    "fault": "f3",
+    "case": "2",
+    "answer": "adservice",
+    "ranks": [
+      "adservice",
+      "cartservice",
+      "checkoutservice",
+      "currencyservice",
+      "emailservice"
+    ],
+    "ac1": 1,
+    "ac3": 1,
+    "ac5": 1,
+    "statespace_confirms": null,
+    "seconds": 3.9
+  },
+  {
+    "system": "OB",
+    "service": "adservice",
+    "fault": "f3",
+    "case": "3",
+    "answer": "adservice",
+    "ranks": [
+      "adservice",
+      "cartservice",
+      "checkoutservice",
+      "currencyservice",
+      "emailservice"
+    ],
+    "ac1": 1,
+    "ac3": 1,
+    "ac5": 1,
+    "statespace_confirms": null,
+    "seconds": 3.9
+  },
+  {
+    "system": "OB",
+    "service": "adservice",
+    "fault": "f4",
+    "case": "1",
+    "answer": "adservice",
+    "ranks": [
+      "adservice",
+      "cartservice",
+      "checkoutservice",
+      "currencyservice",
+      "emailservice"
+    ],
+    "ac1": 1,
+    "ac3": 1,
+    "ac5": 1,
+    "statespace_confirms": null,
+    "seconds": 3.9
+  },
+  {
+    "system": "OB",
+    "service": "adservice",
+    "fault": "f4",
+    "case": "2",
+    "answer": "adservice",
+    "ranks": [
+      "adservice",
+      "cartservice",
+      "checkoutservice",
+      "currencyservice",
+      "emailservice"
+    ],
+    "ac1": 1,
+    "ac3": 1,
+    "ac5": 1,
+    "statespace_confirms": null,
+    "seconds": 4.2
+  },
+  {
+    "system": "OB",
+    "service": "adservice",
+    "fault": "f4",
+    "case": "3",
+    "answer": "adservice",
+    "ranks": [
+      "adservice",
+      "cartservice",
+      "checkoutservice",
+      "currencyservice",
+      "emailservice"
+    ],
+    "ac1": 1,
+    "ac3": 1,
+    "ac5": 1,
+    "statespace_confirms": null,
+    "seconds": 3.9
+  },
+  {
+    "system": "OB",
+    "service": "adservice",
+    "fault": "f5",
+    "case": "1",
+    "answer": "adservice",
+    "ranks": [
+      "adservice",
+      "frontend",
+      "cartservice",
+      "checkoutservice",
+      "currencyservice"
+    ],
+    "ac1": 1,
+    "ac3": 1,
+    "ac5": 1,
+    "statespace_confirms": null,
+    "seconds": 3.9
+  },
+  {
+    "system": "OB",
+    "service": "adservice",
+    "fault": "f5",
+    "case": "2",
+    "answer": "adservice",
+    "ranks": [
+      "adservice",
+      "frontend",
+      "checkoutservice",
+      "cartservice",
+      "currencyservice"
+    ],
+    "ac1": 1,
+    "ac3": 1,
+    "ac5": 1,
+    "statespace_confirms": null,
+    "seconds": 3.8
+  },
+  {
+    "system": "OB",
+    "service": "adservice",
+    "fault": "f5",
+    "case": "3",
+    "answer": "adservice",
+    "ranks": [
+      "adservice",
+      "checkoutservice",
+      "cartservice",
+      "currencyservice",
+      "emailservice"
+    ],
+    "ac1": 1,
+    "ac3": 1,
+    "ac5": 1,
+    "statespace_confirms": null,
+    "seconds": 3.8
+  },
+  {
+    "system": "OB",
+    "service": "cartservice",
+    "fault": "f1",
+    "case": "1",
+    "answer": "cartservice",
+    "ranks": [
+      "cartservice",
+      "adservice",
+      "checkoutservice",
+      "currencyservice",
+      "emailservice"
+    ],
+    "ac1": 1,
+    "ac3": 1,
+    "ac5": 1,
+    "statespace_confirms": null,
+    "seconds": 3.7
+  },
+  {
+    "system": "OB",
+    "service": "cartservice",
+    "fault": "f1",
+    "case": "2",
+    "answer": "cartservice",
+    "ranks": [
+      "cartservice",
+      "adservice",
+      "checkoutservice",
+      "currencyservice",
+      "emailservice"
+    ],
+    "ac1": 1,
+    "ac3": 1,
+    "ac5": 1,
+    "statespace_confirms": null,
+    "seconds": 4.6
+  },
+  {
+    "system": "OB",
+    "service": "cartservice",
+    "fault": "f1",
+    "case": "3",
+    "answer": "cartservice",
+    "ranks": [
+      "cartservice",
+      "adservice",
+      "checkoutservice",
+      "currencyservice",
+      "emailservice"
+    ],
+    "ac1": 1,
+    "ac3": 1,
+    "ac5": 1,
+    "statespace_confirms": null,
+    "seconds": 3.9
+  },
+  {
+    "system": "OB",
+    "service": "currencyservice",
+    "fault": "f1",
+    "case": "1",
+    "answer": "currencyservice",
+    "ranks": [
+      "checkoutservice",
+      "currencyservice",
+      "frontend",
+      "adservice",
+      "cartservice"
+    ],
+    "ac1": 0,
+    "ac3": 1,
+    "ac5": 1,
+    "statespace_confirms": null,
+    "seconds": 3.4
+  },
+  {
+    "system": "OB",
+    "service": "currencyservice",
+    "fault": "f1",
+    "case": "2",
+    "answer": "currencyservice",
+    "ranks": [
+      "checkoutservice",
+      "currencyservice",
+      "frontend",
+      "adservice",
+      "cartservice"
+    ],
+    "ac1": 0,
+    "ac3": 1,
+    "ac5": 1,
+    "statespace_confirms": null,
+    "seconds": 3.4
+  },
+  {
+    "system": "OB",
+    "service": "currencyservice",
+    "fault": "f1",
+    "case": "3",
+    "answer": "currencyservice",
+    "ranks": [
+      "checkoutservice",
+      "currencyservice",
+      "frontend",
+      "adservice",
+      "cartservice"
+    ],
+    "ac1": 0,
+    "ac3": 1,
+    "ac5": 1,
+    "statespace_confirms": null,
+    "seconds": 3.4
+  },
+  {
+    "system": "OB",
+    "service": "emailservice",
+    "fault": "f1",
+    "case": "1",
+    "answer": "emailservice",
+    "ranks": [
+      "emailservice",
+      "checkoutservice",
+      "adservice",
+      "cartservice",
+      "currencyservice"
+    ],
+    "ac1": 1,
+    "ac3": 1,
+    "ac5": 1,
+    "statespace_confirms": null,
+    "seconds": 3.9
+  },
+  {
+    "system": "OB",
+    "service": "emailservice",
+    "fault": "f1",
+    "case": "2",
+    "answer": "emailservice",
+    "ranks": [
+      "emailservice",
+      "adservice",
+      "cartservice",
+      "checkoutservice",
+      "currencyservice"
+    ],
+    "ac1": 1,
+    "ac3": 1,
+    "ac5": 1,
+    "statespace_confirms": null,
+    "seconds": 3.8
+  },
+  {
+    "system": "OB",
+    "service": "emailservice",
+    "fault": "f1",
+    "case": "3",
+    "answer": "emailservice",
+    "ranks": [
+      "emailservice",
+      "adservice",
+      "cartservice",
+      "checkoutservice",
+      "currencyservice"
+    ],
+    "ac1": 1,
+    "ac3": 1,
+    "ac5": 1,
+    "statespace_confirms": null,
+    "seconds": 3.8
+  },
+  {
+    "system": "OB",
+    "service": "emailservice",
+    "fault": "f2",
+    "case": "1",
+    "answer": "emailservice",
+    "ranks": [
+      "emailservice",
+      "adservice",
+      "cartservice",
+      "checkoutservice",
+      "currencyservice"
+    ],
+    "ac1": 1,
+    "ac3": 1,
+    "ac5": 1,
+    "statespace_confirms": null,
+    "seconds": 3.9
+  },
+  {
+    "system": "OB",
+    "service": "emailservice",
+    "fault": "f2",
+    "case": "2",
+    "answer": "emailservice",
+    "ranks": [
+      "emailservice",
+      "checkoutservice",
+      "adservice",
+      "cartservice",
+      "currencyservice"
+    ],
+    "ac1": 1,
+    "ac3": 1,
+    "ac5": 1,
+    "statespace_confirms": null,
+    "seconds": 3.9
+  },
+  {
+    "system": "OB",
+    "service": "emailservice",
+    "fault": "f2",
+    "case": "3",
+    "answer": "emailservice",
+    "ranks": [
+      "emailservice",
+      "checkoutservice",
+      "adservice",
+      "cartservice",
+      "currencyservice"
+    ],
+    "ac1": 1,
+    "ac3": 1,
+    "ac5": 1,
+    "statespace_confirms": null,
+    "seconds": 3.8
+  },
+  {
+    "system": "OB",
+    "service": "emailservice",
+    "fault": "f3",
+    "case": "1",
+    "answer": "emailservice",
+    "ranks": [
+      "emailservice",
+      "adservice",
+      "cartservice",
+      "checkoutservice",
+      "currencyservice"
+    ],
+    "ac1": 1,
+    "ac3": 1,
+    "ac5": 1,
+    "statespace_confirms": null,
+    "seconds": 3.8
+  },
+  {
+    "system": "OB",
+    "service": "emailservice",
+    "fault": "f3",
+    "case": "2",
+    "answer": "emailservice",
+    "ranks": [
+      "emailservice",
+      "adservice",
+      "cartservice",
+      "checkoutservice",
+      "currencyservice"
+    ],
+    "ac1": 1,
+    "ac3": 1,
+    "ac5": 1,
+    "statespace_confirms": null,
+    "seconds": 3.8
+  },
+  {
+    "system": "OB",
+    "service": "emailservice",
+    "fault": "f3",
+    "case": "3",
+    "answer": "emailservice",
+    "ranks": [
+      "emailservice",
+      "adservice",
+      "cartservice",
+      "checkoutservice",
+      "currencyservice"
+    ],
+    "ac1": 1,
+    "ac3": 1,
+    "ac5": 1,
+    "statespace_confirms": null,
+    "seconds": 4.0
+  },
+  {
+    "system": "OB",
+    "service": "emailservice",
+    "fault": "f4",
+    "case": "1",
+    "answer": "emailservice",
+    "ranks": [
+      "emailservice",
+      "paymentservice",
+      "checkoutservice",
+      "adservice",
+      "cartservice"
+    ],
+    "ac1": 1,
+    "ac3": 1,
+    "ac5": 1,
+    "statespace_confirms": null,
+    "seconds": 3.8
+  },
+  {
+    "system": "OB",
+    "service": "emailservice",
+    "fault": "f4",
+    "case": "2",
+    "answer": "emailservice",
+    "ranks": [
+      "emailservice",
+      "adservice",
+      "cartservice",
+      "checkoutservice",
+      "currencyservice"
+    ],
+    "ac1": 1,
+    "ac3": 1,
+    "ac5": 1,
+    "statespace_confirms": null,
+    "seconds": 3.9
+  },
+  {
+    "system": "OB",
+    "service": "emailservice",
+    "fault": "f4",
+    "case": "3",
+    "answer": "emailservice",
+    "ranks": [
+      "emailservice",
+      "adservice",
+      "cartservice",
+      "checkoutservice",
+      "currencyservice"
+    ],
+    "ac1": 1,
+    "ac3": 1,
+    "ac5": 1,
+    "statespace_confirms": null,
+    "seconds": 3.8
+  },
+  {
+    "system": "OB",
+    "service": "emailservice",
+    "fault": "f5",
+    "case": "1",
+    "answer": "emailservice",
+    "ranks": [
+      "emailservice",
+      "checkoutservice",
+      "adservice",
+      "cartservice",
+      "currencyservice"
+    ],
+    "ac1": 1,
+    "ac3": 1,
+    "ac5": 1,
+    "statespace_confirms": null,
+    "seconds": 3.8
+  },
+  {
+    "system": "OB",
+    "service": "emailservice",
+    "fault": "f5",
+    "case": "2",
+    "answer": "emailservice",
+    "ranks": [
+      "emailservice",
+      "adservice",
+      "cartservice",
+      "checkoutservice",
+      "currencyservice"
+    ],
+    "ac1": 1,
+    "ac3": 1,
+    "ac5": 1,
+    "statespace_confirms": null,
+    "seconds": 3.9
+  },
+  {
+    "system": "OB",
+    "service": "emailservice",
+    "fault": "f5",
+    "case": "3",
+    "answer": "emailservice",
+    "ranks": [
+      "emailservice",
+      "adservice",
+      "cartservice",
+      "checkoutservice",
+      "currencyservice"
+    ],
+    "ac1": 1,
+    "ac3": 1,
+    "ac5": 1,
+    "statespace_confirms": null,
+    "seconds": 3.8
+  },
+  {
+    "system": "TT",
+    "service": "ts-auth-service",
+    "fault": "f1",
+    "case": "1",
+    "answer": "tsauthservice",
+    "ranks": [
+      "tscontactsservice",
+      "tsassuranceservice",
+      "tsauthservice",
+      "tsadminbasicinfoservice",
+      "tsadmintravelservice"
+    ],
+    "ac1": 0,
+    "ac3": 1,
+    "ac5": 1,
+    "statespace_confirms": null,
+    "seconds": 3.0
+  },
+  {
+    "system": "TT",
+    "service": "ts-auth-service",
+    "fault": "f1",
+    "case": "2",
+    "answer": "tsauthservice",
+    "ranks": [
+      "tsauthservice",
+      "tsadminbasicinfoservice",
+      "tsadmintravelservice",
+      "tsassuranceservice",
+      "tsbasicservice"
+    ],
+    "ac1": 1,
+    "ac3": 1,
+    "ac5": 1,
+    "statespace_confirms": null,
+    "seconds": 3.0
+  },
+  {
+    "system": "TT",
+    "service": "ts-auth-service",
+    "fault": "f1",
+    "case": "3",
+    "answer": "tsauthservice",
+    "ranks": [
+      "tsauthservice",
+      "tsadminbasicinfoservice",
+      "tsadmintravelservice",
+      "tsassuranceservice",
+      "tsbasicservice"
+    ],
+    "ac1": 1,
+    "ac3": 1,
+    "ac5": 1,
+    "statespace_confirms": null,
+    "seconds": 3.1
+  },
+  {
+    "system": "TT",
+    "service": "ts-auth-service",
+    "fault": "f1",
+    "case": "4",
+    "answer": "tsauthservice",
+    "ranks": [
+      "tsauthservice",
+      "tsadminbasicinfoservice",
+      "tsadmintravelservice",
+      "tsassuranceservice",
+      "tsbasicservice"
+    ],
+    "ac1": 1,
+    "ac3": 1,
+    "ac5": 1,
+    "statespace_confirms": null,
+    "seconds": 2.5
+  },
+  {
+    "system": "TT",
+    "service": "ts-auth-service",
+    "fault": "f2",
+    "case": "1",
+    "answer": "tsauthservice",
+    "ranks": [
+      "tsauthservice",
+      "tsinsidepaymentservice",
+      "tsadminbasicinfoservice",
+      "tsadmintravelservice",
+      "tsassuranceservice"
+    ],
+    "ac1": 1,
+    "ac3": 1,
+    "ac5": 1,
+    "statespace_confirms": null,
+    "seconds": 3.1
+  },
+  {
+    "system": "TT",
+    "service": "ts-auth-service",
+    "fault": "f2",
+    "case": "2",
+    "answer": "tsauthservice",
+    "ranks": [
+      "tscontactsservice",
+      "tsauthservice",
+      "tsassuranceservice",
+      "tsadminbasicinfoservice",
+      "tsadmintravelservice"
+    ],
+    "ac1": 0,
+    "ac3": 1,
+    "ac5": 1,
+    "statespace_confirms": null,
+    "seconds": 3.0
+  },
+  {
+    "system": "TT",
+    "service": "ts-auth-service",
+    "fault": "f2",
+    "case": "3",
+    "answer": "tsauthservice",
+    "ranks": [
+      "tsauthservice",
+      "tsorderservice",
+      "tsadminbasicinfoservice",
+      "tsadmintravelservice",
+      "tsbasicservice"
+    ],
+    "ac1": 1,
+    "ac3": 1,
+    "ac5": 1,
+    "statespace_confirms": null,
+    "seconds": 3.0
+  },
+  {
+    "system": "TT",
+    "service": "ts-auth-service",
+    "fault": "f2",
+    "case": "4",
+    "answer": "tsauthservice",
+    "ranks": [
+      "tsassuranceservice",
+      "tsorderservice",
+      "tsauthservice",
+      "tsadminbasicinfoservice",
+      "tsadmintravelservice"
+    ],
+    "ac1": 0,
+    "ac3": 1,
+    "ac5": 1,
+    "statespace_confirms": null,
+    "seconds": 2.4
+  },
+  {
+    "system": "TT",
+    "service": "ts-auth-service",
+    "fault": "f3",
+    "case": "1",
+    "answer": "tsauthservice",
+    "ranks": [
+      "tsauthservice",
+      "tscontactsservice",
+      "tsadminbasicinfoservice",
+      "tsadmintravelservice",
+      "tsassuranceservice"
+    ],
+    "ac1": 1,
+    "ac3": 1,
+    "ac5": 1,
+    "statespace_confirms": null,
+    "seconds": 3.1
+  },
+  {
+    "system": "TT",
+    "service": "ts-auth-service",
+    "fault": "f3",
+    "case": "2",
+    "answer": "tsauthservice",
+    "ranks": [
+      "tsauthservice",
+      "tsassuranceservice",
+      "tsadminbasicinfoservice",
+      "tsadmintravelservice",
+      "tsbasicservice"
+    ],
+    "ac1": 1,
+    "ac3": 1,
+    "ac5": 1,
+    "statespace_confirms": null,
+    "seconds": 3.1
+  },
+  {
+    "system": "TT",
+    "service": "ts-auth-service",
+    "fault": "f3",
+    "case": "3",
+    "answer": "tsauthservice",
+    "ranks": [
+      "tscontactsservice",
+      "tsauthservice",
+      "tspreserveservice",
+      "tsadminbasicinfoservice",
+      "tsadmintravelservice"
+    ],
+    "ac1": 0,
+    "ac3": 1,
+    "ac5": 1,
+    "statespace_confirms": null,
+    "seconds": 3.1
+  },
+  {
+    "system": "TT",
+    "service": "ts-auth-service",
+    "fault": "f3",
+    "case": "4",
+    "answer": "tsauthservice",
+    "ranks": [
+      "tsassuranceservice",
+      "tsauthservice",
+      "tsadminbasicinfoservice",
+      "tsadmintravelservice",
+      "tsbasicservice"
+    ],
+    "ac1": 0,
+    "ac3": 1,
+    "ac5": 1,
+    "statespace_confirms": null,
+    "seconds": 2.5
+  },
+  {
+    "system": "TT",
+    "service": "ts-auth-service",
+    "fault": "f4",
+    "case": "1",
+    "answer": "tsauthservice",
+    "ranks": [
+      "tscontactsservice",
+      "tsauthservice",
+      "tsinsidepaymentservice",
+      "tsorderotherservice",
+      "tsorderservice"
+    ],
+    "ac1": 0,
+    "ac3": 1,
+    "ac5": 1,
+    "statespace_confirms": null,
+    "seconds": 3.2
+  },
+  {
+    "system": "TT",
+    "service": "ts-auth-service",
+    "fault": "f4",
+    "case": "2",
+    "answer": "tsauthservice",
+    "ranks": [
+      "tscontactsservice",
+      "tsauthservice",
+      "tsinsidepaymentservice",
+      "tsadminbasicinfoservice",
+      "tsadmintravelservice"
+    ],
+    "ac1": 0,
+    "ac3": 1,
+    "ac5": 1,
+    "statespace_confirms": null,
+    "seconds": 3.1
+  },
+  {
+    "system": "TT",
+    "service": "ts-auth-service",
+    "fault": "f4",
+    "case": "3",
+    "answer": "tsauthservice",
+    "ranks": [
+      "tsauthservice",
+      "tsadminbasicinfoservice",
+      "tsadmintravelservice",
+      "tsbasicservice",
+      "tsconfigservice"
+    ],
+    "ac1": 1,
+    "ac3": 1,
+    "ac5": 1,
+    "statespace_confirms": null,
+    "seconds": 3.1
+  },
+  {
+    "system": "TT",
+    "service": "ts-route-service",
+    "fault": "f1",
+    "case": "1",
+    "answer": "tsrouteservice",
+    "ranks": [
+      "tsrouteservice",
+      "tsfoodservice",
+      "tspreserveotherservice",
+      "tsadminbasicinfoservice",
+      "tsadmintravelservice"
+    ],
+    "ac1": 1,
+    "ac3": 1,
+    "ac5": 1,
+    "statespace_confirms": null,
+    "seconds": 4.0
+  },
+  {
+    "system": "TT",
+    "service": "ts-route-service",
+    "fault": "f1",
+    "case": "2",
+    "answer": "tsrouteservice",
+    "ranks": [
+      "tsrouteservice",
+      "tsconsignservice",
+      "tsadmintravelservice",
+      "tsadminbasicinfoservice",
+      "tsassuranceservice"
+    ],
+    "ac1": 1,
+    "ac3": 1,
+    "ac5": 1,
+    "statespace_confirms": null,
+    "seconds": 4.2
+  },
+  {
+    "system": "TT",
+    "service": "ts-route-service",
+    "fault": "f1",
+    "case": "3",
+    "answer": "tsrouteservice",
+    "ranks": [
+      "tsrouteservice",
+      "tsadminbasicinfoservice",
+      "tsadmintravelservice",
+      "tsassuranceservice",
+      "tsauthservice"
+    ],
+    "ac1": 1,
+    "ac3": 1,
+    "ac5": 1,
+    "statespace_confirms": null,
+    "seconds": 6.1
+  },
+  {
+    "system": "TT",
+    "service": "ts-route-service",
+    "fault": "f2",
+    "case": "1",
+    "answer": "tsrouteservice",
+    "ranks": [
+      "tsrouteservice",
+      "tstravelservice",
+      "tsorderservice",
+      "tsadminbasicinfoservice",
+      "tsadmintravelservice"
+    ],
+    "ac1": 1,
+    "ac3": 1,
+    "ac5": 1,
+    "statespace_confirms": null,
+    "seconds": 7.2
+  },
+  {
+    "system": "TT",
+    "service": "ts-route-service",
+    "fault": "f2",
+    "case": "2",
+    "answer": "tsrouteservice",
+    "ranks": [
+      "tsrouteservice",
+      "tsorderservice",
+      "tsadminbasicinfoservice",
+      "tsadmintravelservice",
+      "tsassuranceservice"
+    ],
+    "ac1": 1,
+    "ac3": 1,
+    "ac5": 1,
+    "statespace_confirms": null,
+    "seconds": 8.9
+  },
+  {
+    "system": "TT",
+    "service": "ts-route-service",
+    "fault": "f2",
+    "case": "3",
+    "answer": "tsrouteservice",
+    "ranks": [
+      "tsrouteservice",
+      "tsfoodservice",
+      "tsadminbasicinfoservice",
+      "tsadmintravelservice",
+      "tsassuranceservice"
+    ],
+    "ac1": 1,
+    "ac3": 1,
+    "ac5": 1,
+    "statespace_confirms": null,
+    "seconds": 7.6
+  },
+  {
+    "system": "TT",
+    "service": "ts-route-service",
+    "fault": "f3",
+    "case": "1",
+    "answer": "tsrouteservice",
+    "ranks": [
+      "tsrouteservice",
+      "tsorderotherservice",
+      "tsadminbasicinfoservice",
+      "tsadmintravelservice",
+      "tsassuranceservice"
+    ],
+    "ac1": 1,
+    "ac3": 1,
+    "ac5": 1,
+    "statespace_confirms": null,
+    "seconds": 8.1
+  },
+  {
+    "system": "TT",
+    "service": "ts-route-service",
+    "fault": "f3",
+    "case": "2",
+    "answer": "tsrouteservice",
+    "ranks": [
+      "tsrouteservice",
+      "tsconsignservice",
+      "tsorderservice",
+      "tsadminbasicinfoservice",
+      "tsadmintravelservice"
+    ],
+    "ac1": 1,
+    "ac3": 1,
+    "ac5": 1,
+    "statespace_confirms": null,
+    "seconds": 6.9
+  },
+  {
+    "system": "TT",
+    "service": "ts-route-service",
+    "fault": "f3",
+    "case": "3",
+    "answer": "tsrouteservice",
+    "ranks": [
+      "tsrouteservice",
+      "tsadminbasicinfoservice",
+      "tsadmintravelservice",
+      "tsassuranceservice",
+      "tsauthservice"
+    ],
+    "ac1": 1,
+    "ac3": 1,
+    "ac5": 1,
+    "statespace_confirms": null,
+    "seconds": 8.8
+  },
+  {
+    "system": "TT",
+    "service": "ts-route-service",
+    "fault": "f4",
+    "case": "1",
+    "answer": "tsrouteservice",
+    "ranks": [
+      "tsrouteservice",
+      "tsorderservice",
+      "tsadminbasicinfoservice",
+      "tsadmintravelservice",
+      "tsassuranceservice"
+    ],
+    "ac1": 1,
+    "ac3": 1,
+    "ac5": 1,
+    "statespace_confirms": null,
+    "seconds": 8.2
+  },
+  {
+    "system": "TT",
+    "service": "ts-route-service",
+    "fault": "f4",
+    "case": "2",
+    "answer": "tsrouteservice",
+    "ranks": [
+      "tsrouteservice",
+      "tstravelservice",
+      "tsorderservice",
+      "tsfoodservice",
+      "tsadminbasicinfoservice"
+    ],
+    "ac1": 1,
+    "ac3": 1,
+    "ac5": 1,
+    "statespace_confirms": null,
+    "seconds": 7.5
+  },
+  {
+    "system": "TT",
+    "service": "ts-route-service",
+    "fault": "f4",
+    "case": "3",
+    "answer": "tsrouteservice",
+    "ranks": [
+      "tsfoodservice",
+      "tsrouteservice",
+      "tsorderotherservice",
+      "tsadminbasicinfoservice",
+      "tsadmintravelservice"
+    ],
+    "ac1": 0,
+    "ac3": 1,
+    "ac5": 1,
+    "statespace_confirms": null,
+    "seconds": 6.9
+  }
+]
