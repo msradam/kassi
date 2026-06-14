@@ -233,6 +233,31 @@ forecast, a regression the error rate would miss entirely.
 - The agent publishes its own state-machine walk back to Splunk, so kassi is observable in the
   same system it reads, the dashboard shows not just what the change did but how the agent decided.
 
+## Validation: kassi-bench
+
+We did not want to claim kassi "correlates problems" on the strength of a demo, so we built a
+reproducible, ground-truth benchmark for exactly that and ran it against live Splunk. 80 runs span
+five change-induced fault classes (a 5xx regression, two latency degradations, 4xx throttling, a
+downstream 504 cascade) plus three healthy controls, ten reps each, with a deterministic load so the
+only variable is kassi's correlation. Each run is scored on kassi's actual verdict against the known
+fault: detection, endpoint localization, failure-class, and root cause, and, for the controls, that
+kassi stays silent.
+
+kassi is correct on all 80 runs: 100% on detection, localization, failure-class, and root cause
+across the 50 fault runs, and a 0% false-alarm rate across the 30 healthy controls.
+
+The benchmark earned that by failing first. Its opening run exposed two real defects in kassi's
+verdict logic, both now fixed and locked in by a regression test: 4xx throttling was mislabeled
+"latency degradation" (there was no throttling branch), and healthy endpoints cried wolf when
+anomalydetection annotated a single bucket on sub-10ms jitter (there was no latency floor). The
+controls exist to catch the second, and they did. That is the point of a benchmark.
+
+This is deliberately distinct from infrastructure-fault RCA benchmarks (RCAEval, PetShop, LEMMA-RCA),
+which inject CPU/memory/network faults and score over pre-recorded traces. Here the fault is a real
+code change, exercised live by k6, and diagnosed from Splunk over the exact test window. The harness,
+the raw results, and the full table are in the repo: `scripts/benchmark.py` and
+`docs/benchmark/BENCHMARK.md`, reproducible with one command.
+
 ## What we learned
 
 - Constraining the agent makes it more useful, not less. A single `step` tool with
@@ -256,6 +281,9 @@ forecast, a regression the error rate would miss entirely.
 - Grow synthetic load generation: schema-aware request synthesis, realistic traffic mixes
   and ramps, and seeded fault scenarios so a single intent produces a richer, more
   representative test rather than a static replay.
+- Run kassi-bench against the standard RCA benchmark systems (RCAEval's Sock Shop and Train Ticket)
+  for a cross-system comparison against published baselines, and grow the suite past five fault
+  classes.
 
 ## Additional information
 

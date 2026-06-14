@@ -353,6 +353,21 @@ uv run python scripts/verify_scenario.py feed   # or petclinic | storefront | ga
 
 `petclinic` is also the headline diff-mode run below.
 
+## Benchmark
+
+`kassi-bench` scores kassi against ground truth: 80 live runs over five change-induced fault classes
+(5xx regression, two latency degradations, 4xx throttling, a 504 cascade) plus three healthy
+controls, ten reps each, deterministic load, scored on kassi's actual verdict. kassi is correct on
+all 80: 100% detection, localization, failure-class, and root cause across the faults, and 0% false
+alarms on the controls. The suite found and fixed two real verdict bugs along the way (a missing
+throttling branch, a missing latency floor). Full methodology and the table:
+[`docs/benchmark/BENCHMARK.md`](docs/benchmark/BENCHMARK.md).
+
+```bash
+uv run python scripts/benchmark.py --reps 10     # writes docs/benchmark/results.json
+uv run python scripts/benchmark_report.py        # regenerates the report
+```
+
 ## Dashboard
 
 <p align="center"><img src="docs/assets/shot-dashboard.png" alt="kassi dashboard: change impact read from Splunk" width="820" /></p>

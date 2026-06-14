@@ -7,7 +7,7 @@
       <single>
         <title>latest verdict</title>
         <search>
-          <query>index=kassi_runs sourcetype=kassi:run | head 1 | eval kind=case(srv_5xx&gt;0,"REGRESSION", k6_failed_pct&gt;0,"DEGRADED", forecast_p95_ms&gt;1.15*srv_p95_ms OR anomalous_buckets&gt;0,"DEGRADING", true(),"HEALTHY") | fields kind</query>
+          <query>index=kassi_runs sourcetype=kassi:run | head 1 | eval kind=case(match(verdict,"regression"),"REGRESSION", match(verdict,"throttling"),"THROTTLED", match(verdict,"degradation"),"DEGRADING", match(verdict,"passed"),"HEALTHY", true(),"FAILED") | fields kind</query>
           <earliest>-30d</earliest>
           <latest>now</latest>
         </search>

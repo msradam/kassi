@@ -710,6 +710,8 @@ def _step_status(state: State, phase: str, ptools: list[dict], verdict: str) -> 
         v = (verdict or "").lower()
         if "regression" in v:
             return "regression"
+        if "throttling" in v:
+            return "throttled"
         if "degradation" in v:
             return "degrading"
         return "failed" if v.startswith(("failed", "no run")) else "ok"
@@ -721,6 +723,9 @@ def _as_float(value: Any) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+_LATENCY_FLOOR_MS = 25.0  # below this, a flagged bucket is treated as jitter, not a degradation
 
 
 def _verdict(state: State) -> str:
@@ -735,13 +740,29 @@ def _verdict(state: State) -> str:
             f"server-side regression: {wp['path']} p95 {wp['p95_ms']}ms, "
             f"{wp['err_pct']}% 5xx, cause: {te['error_message']}"
         )
+    # Client-side throttling: 4xx dominate with no server errors. The service is healthy; offered
+    # load simply exceeded a rate limit, so the failures are the client's to back off on, not a
+    # server regression. Checked before the latency branch, since anomalydetection can fire on the
+    # near-zero p95 of fast-rejected requests and otherwise mislabel a throttle as degradation.
+    total = findings.get("total_events") or 0
+    ce = findings.get("client_errors") or 0
+    if (findings.get("server_errors") or 0) == 0 and total and ce / total >= 0.2:
+        path = (wp or {}).get("path") or "the changed endpoint"
+        return (
+            f"client-side throttling: {path} {round(100 * ce / total)}% 4xx, "
+            "no server errors (rate-limited, not broken)"
+        )
     # No errors, but Splunk's own ML flags the trend: a latency regression the error rate misses.
     # Either the forecast projects p95 climbing past the current level, or anomalydetection fired.
     an = state["anomalies"] or {}
     fp, p95 = _as_float(an.get("forecast_p95_ms")), _as_float(findings.get("p95_ms"))
     rising = fp is not None and p95 is not None and fp > 1.15 * p95
     flagged = (an.get("anomalous_buckets") or 0) or (an.get("forecast_breaches") or 0)
-    if an.get("available") and (rising or flagged):
+    # ...but only when p95 is actually slow. anomalydetection still annotates the odd bucket on a
+    # healthy fast endpoint's sub-10ms jitter; the floor keeps a single noise bucket from crying
+    # wolf (the benchmark's healthy controls otherwise read as degradation).
+    slow = p95 is not None and p95 >= _LATENCY_FLOOR_MS
+    if an.get("available") and slow and (rising or flagged):
         path = (wp or {}).get("path") or "the changed endpoint"
         return (
             f"latency degradation: {path} p95 {findings.get('p95_ms')}ms with no errors; "
