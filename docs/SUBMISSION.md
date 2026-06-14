@@ -14,7 +14,9 @@ Splunk MCP Server, and explains what the change did and *why*, root cause (`data
 locked`), cited evidence, an ML forecast of the trend, and the fix, then publishes the verdict
 back to a Splunk dashboard. A change goes in, an explained outcome comes out: agentic
 observability, every step sealed to a hash-chained, auditable ledger, so the prophecy comes
-with proof and it is safe to run unattended.
+with proof and it is safe to run unattended. The driver, the writer, and the auditor all run on
+a local 8B model, and the agent publishes its own state-machine walk back to Splunk, so it is
+observable in the very system it observes.
 
 **Track:** Observability (primary); also Platform & Developer Experience.
 **Bonus prizes targeted:** Best Use of Splunk MCP Server; Best Use of Splunk Developer Tools.
@@ -62,9 +64,11 @@ change (a git diff) or a plain-language intent and it:
    introduced it,
 6. screens that analysis with a separate IBM Granite Guardian 4.1 model, an independent check
    that no claim is unsupported by or contradicts the telemetry it cites, and seals the pass/fail
-   to the ledger, then reports the combined client plus server verdict. The model narrates each phase as a tarot
-   reading; every upstream tool call is on a provenance record; the run is published to a Splunk
-   dashboard.
+   to the ledger, then reports the combined client plus server verdict. The model narrates each
+   phase as a tarot reading; every upstream tool call is on a provenance record; the run is
+   published back to Splunk twice over: a run summary, **and the agent's own state-machine walk**,
+   one event per phase keyed by the run's id, so the agent is observable in the same system it
+   observes, not just what the change did, but how the agent reached the verdict.
 
 So the loop closes both ways: a change comes in, and a change that fixes it goes out. In the
 verified petclinic run, kassi diagnosed `database is locked` and proposed a minimal, validated
@@ -74,8 +78,13 @@ diff: the model emits SEARCH/REPLACE edits (the format LLMs handle reliably), ka
 them to the file, re-parses the result to confirm it still compiles, and only then renders a
 real unified diff with difflib, so the line numbers are correct and the fix is known to apply.
 
-The driving agent (Claude Code, Cursor, any MCP client) never sees k6 or Splunk. It sees
-one tool, `step(action, inputs)`, and takes the workflow one move at a time.
+The driving agent never sees k6 or Splunk. It sees one tool, `step(action, inputs)`, and takes
+the workflow one move at a time. That driver is pluggable: Claude Code, Cursor, any MCP client,
+or a **local Granite model** via `kassi pilot`, which reads the reachable actions and calls
+`step` for each phase itself. With the Granite driver, the driver, the writer, and the auditor
+are all the same local model family, so the entire loop runs on one box with no cloud brain. The
+orchestration is model-neutral, so the architecture scales with the model rather than depending
+on one; Granite 4.1 is the default because it proves the whole loop fits on a local 8B.
 
 In a verified run against live Splunk, driven from a git diff that adds `POST /api/visits`,
 one agent orchestrated 18 tool calls across both MCP servers: it extracted the changed
@@ -96,7 +105,9 @@ an unbounded recompute (latency **rising over the run**, where the forecast earn
 Granite projects p95 climbing past the current value), a too-tight rate limit (**429** throttling,
 exercising the 4xx-vs-5xx split), and a downstream timeout cascade (latency **plus 504s**, a
 dependency root cause whose fix is resilience, not query tuning). Each yields a different cause
-and recommendation.
+and recommendation, and the verdict reflects the kind of failure: a 5xx change reads as a
+regression, while a zero-error latency change reads as "degrading", flagged off Splunk's own
+forecast, a regression the error rate would miss entirely.
 
 ## How we built it
 
@@ -155,6 +166,19 @@ and recommendation.
   bill, and the model backing it carries a recognized governance certification, which matters for
   a tool that has autonomy over ops infrastructure. The expensive frontier model is optional, not
   required.
+- **The driver is local too, so nothing leaves the box.** Beyond authoring and auditing, the
+  *agent that drives the state machine* can be a local Granite model. `kassi pilot` connects
+  Granite to the mounted MCP server and lets it call `step` for each phase itself, recovering
+  from the graph's refusals, until it reaches the verdict. Driver, writer, and auditor are then
+  the same local family. Because the driver and the per-phase models sit behind a model-neutral
+  surface (the MCP `step` tool, an `LLM` protocol with Ollama and Anthropic backends), the model
+  is pluggable: swap in a larger or hosted one and nothing else changes.
+- **The agent is observable in Splunk, not just its results.** kassi reads Splunk to observe the
+  target; it then publishes its *own* execution back to Splunk over HEC, one `kassi:step` event
+  per state-machine phase (its card, outcome, and the tool calls it made) alongside the run
+  summary, all keyed by the run's id. A dashboard renders the agent's walk from The Fool to
+  Judgement next to the client-and-server join, so an operator sees how the agent reached the
+  verdict. Agentic ops, taken literally: the agent is a first-class observable.
 
 ## Challenges we ran into
 
@@ -197,6 +221,11 @@ and recommendation.
 - The published analysis is screened by an independent model. A separate Granite Guardian 4.1
   phase judges whether the writeup is grounded in the telemetry it cites and seals that verdict to
   the ledger, so the writer model is audited by a second model rather than trusted on its own word.
+- The whole agent runs locally, including the part that *drives* it: `kassi pilot` lets a local
+  Granite model walk the state machine itself, so driver, writer, and auditor are all on-box, with
+  no cloud agent in the loop.
+- The agent publishes its own state-machine walk back to Splunk, so kassi is observable in the
+  same system it reads, the dashboard shows not just what the change did but how the agent decided.
 
 ## What we learned
 
@@ -214,7 +243,7 @@ and recommendation.
   the runner so the MCP call never returns, so every blocking upstream call is bounded by a
   timeout that falls back to the deterministic scaffold: the pipeline degrades, never stalls.
 
-## What's next for kassi: Synthetic Load Generation
+## What's next for kassi
 
 - Use a Splunk-hosted model for a root-cause narrative over the correlated window.
 - Use the AI Assistant for SPL to generate correlation queries from intent.
