@@ -24,7 +24,7 @@ Splunk, so it is observable in the very system it observes.
 **Bonus prizes targeted:** Best Use of Splunk MCP Server; Best Use of Splunk Developer Tools.
 
 Verified end-to-end against Splunk Enterprise 10.4.0 with the official Splunk MCP Server
-(Splunkbase 7931, v1.2.0) and a local IBM Granite 4.1 model. See the case study in the README
+(Splunkbase 7931, v1.2.0); the model is pluggable (a local open 8B or a frontier model). See the case study in the README
 and `docs/SPLUNK_SETUP.md`. The Splunk integration was built during the submission period, extending a diff-to-k6
 tool from an earlier project of mine; see Additional information.
 
@@ -68,7 +68,7 @@ change (a git diff) or a plain-language intent and it:
 5. writes a cited, grounded analysis (root cause, evidence, recommendation) and a **proposed
    remediation**: a minimal unified diff that fixes the root cause, written from the diff that
    introduced it,
-6. screens that analysis with a separate IBM Granite Guardian 4.1 model, an independent check
+6. screens that analysis with a separate independent auditor model, an independent check
    that no claim is unsupported by or contradicts the telemetry it cites, and seals the pass/fail
    to the ledger, then reports the combined client plus server verdict. The model narrates each
    phase as a tarot reading; every upstream tool call is on a provenance record; the run is
@@ -86,11 +86,11 @@ real unified diff with difflib, so the line numbers are correct and the fix is k
 
 The driving agent never sees k6 or Splunk. It sees one tool, `step(action, inputs)`, and takes
 the workflow one move at a time. That driver is pluggable: Claude Code, Cursor, any MCP client,
-or a **local Granite model** via `kassi pilot`, which reads the reachable actions and calls
-`step` for each phase itself. With the Granite driver, the driver, the writer, and the auditor
-are all the same local model family, so the entire loop runs on one box with no cloud brain. The
-orchestration is model-neutral, so the architecture scales with the model rather than depending
-on one; Granite 4.1 is the default because it proves the whole loop fits on a local 8B.
+or a **local open model** via `kassi pilot`, which reads the reachable actions and calls
+`step` for each phase itself. The orchestration is model-neutral, so the architecture scales
+**with** the model rather than depending on one: the same harness runs on a single local 8B (driver,
+writer, and auditor all on one box, no cloud brain) and on a frontier model over the Claude Agent
+SDK. The model is a swappable component, not the design.
 
 In a verified run against live Splunk, driven from a git diff that adds `POST /api/visits`,
 one agent orchestrated 18 tool calls across both MCP servers: it extracted the changed
@@ -108,7 +108,7 @@ It ships **five demo targets spanning the load-failure taxonomy**, so the correl
 on distinct signatures rather than one trick: a SQLite write-lock (5xx under concurrency, the
 case above), an N+1 query (latency with **zero errors**, visible only in server-side `db_time`),
 an unbounded recompute (latency **rising over the run**, where the forecast earns its keep:
-Granite projects p95 climbing past the current value), a too-tight rate limit (**429** throttling,
+the StateSpace forecast projects p95 climbing past the current value), a too-tight rate limit (**429** throttling,
 exercising the 4xx-vs-5xx split), and a downstream timeout cascade (latency **plus 504s**, a
 dependency root cause whose fix is resilience, not query tuning). Each yields a different cause
 and recommendation, and the verdict reflects the kind of failure: a 5xx change reads as a
@@ -146,39 +146,36 @@ forecast, a regression the error rate would miss entirely.
   composes a runnable k6 baseline from the OpenAPI schema with no model. The `generate_script`
   phase then has the model author the final script on top of it, guided by k6's own
   `generate_script` prompt; `report` has the model write a cited analysis (root cause,
-  evidence, recommendation) and narrate the run as a tarot reading. The default backend is a
-  local **IBM Granite 4.1** model via Ollama, whose chat template natively grounds the analysis
-  on the run's evidence documents, so it stays to the measured facts and cites each one's
-  source. Claude is an alternative (one env var). The model never writes SPL, and when it is
-  offline or its output keeps failing validation the pipeline runs the deterministic scaffold
-  and a deterministic analysis, so a run never fails for lack of a model.
-- **Two models, two roles: a writer and an auditor.** The analysis is written by Granite 4.1
-  (the writer), then a separate phase, `screen`, hands that analysis and the evidence it cites to
-  IBM Granite Guardian 4.1 (the auditor: an 8B model fine-tuned from the same Granite 4.1 base,
-  Apache-2.0) to judge groundedness: does the writeup include any claim unsupported by, or
-  contradicting, the measured telemetry it was grounded on? Guardian returns a yes/no that is
-  sealed to the report ledger. So the writer model is not trusted on its own word; an independent
-  model checks it before the verdict is published, catching both an analysis that contradicts the
-  numbers and one that invents a cause the telemetry never showed. The phase degrades to
-  "unavailable" (never blocks) when Guardian is off. Different state-machine phase, different
-  model: the FSM makes that composition clean, and the whole loop, writer and auditor alike,
-  stays within the open Granite 4.1 family on one local host.
-- **An 8B model runs the whole loop, on-prem.** kassi defaults to IBM Granite 4.1 (8B) served
-  locally by Ollama, the first open-source LLM certified to ISO/IEC 42001 (the AI management
-  system standard), Apache-2.0 licensed and shipped with IBM's IP indemnity. Every model task
-  in the pipeline (authoring the k6 script, writing the grounded analysis, proposing the
-  remediation edits) runs on that one local model. So an enterprise runs kassi fully on-prem or
-  air-gapped: no code, no diffs, and no telemetry leave the building, there is no per-token cloud
-  bill, and the model backing it carries a recognized governance certification, which matters for
-  a tool that has autonomy over ops infrastructure. The expensive frontier model is optional, not
-  required.
-- **The driver is local too, so nothing leaves the box.** Beyond authoring and auditing, the
-  *agent that drives the state machine* can be a local Granite model. `kassi pilot` connects
-  Granite to the mounted MCP server and lets it call `step` for each phase itself, recovering
-  from the graph's refusals, until it reaches the verdict. Driver, writer, and auditor are then
-  the same local family. Because the driver and the per-phase models sit behind a model-neutral
-  surface (the MCP `step` tool, an `LLM` protocol with Ollama and Anthropic backends), the model
-  is pluggable: swap in a larger or hosted one and nothing else changes.
+  evidence, recommendation) and narrate the run as a tarot reading. The backend is pluggable behind
+  one interface: a local open 8B via Ollama (whose chat template natively grounds the analysis on
+  the run's evidence documents, so it stays to the measured facts and cites each source) or a
+  frontier model via the Claude Agent SDK, selected by one env var. The model never writes SPL, and
+  when it is offline or its output keeps failing validation the pipeline runs the deterministic
+  scaffold and a deterministic analysis, so a run never fails for lack of a model.
+- **Two roles, a writer and an auditor.** The analysis is written by the configured model (the
+  writer), then a separate phase, `screen`, hands that analysis and the evidence it cites to an
+  independent auditor model to judge groundedness: does the writeup include any claim unsupported
+  by, or contradicting, the measured telemetry it was grounded on? The auditor returns a yes/no
+  sealed to the report ledger, so the writer is not trusted on its own word; an independent pass
+  checks it before the verdict is published, catching both an analysis that contradicts the numbers
+  and one that invents a cause the telemetry never showed. The phase degrades to "unavailable"
+  (never blocks) when the auditor is off. Different state-machine phase, different model: the FSM
+  makes that composition clean, and it works whether both roles are a local open model (e.g., the
+  Granite family, writer plus Granite Guardian) on one host or a frontier model in audit mode.
+- **The architecture scales down as well as up.** Because the model is swappable, the entire loop
+  (authoring the k6 script, writing the grounded analysis, proposing the remediation edits) can run
+  on a single local open 8B served by Ollama. So an enterprise runs kassi fully on-prem or
+  air-gapped: no code, no diffs, and no telemetry leave the building, and there is no per-token
+  cloud bill, which matters for a tool that has autonomy over ops infrastructure. The same harness
+  scales up to a frontier model when the diagnosis warrants it. The frontier model is optional, not
+  required; the local 8B is a floor, not a ceiling.
+- **The driver is pluggable too, local or frontier.** Beyond authoring and auditing, the
+  *agent that drives the state machine* can be a local open model. `kassi pilot` connects the model
+  to the mounted MCP server and lets it call `step` for each phase itself, recovering from the
+  graph's refusals, until it reaches the verdict. With a local model, driver, writer, and auditor
+  all run on one box. Because the driver and the per-phase models sit behind a model-neutral surface
+  (the MCP `step` tool, an `LLM` protocol with Ollama and Claude Agent SDK backends), the model is
+  swappable: point it at a larger or hosted one and nothing else changes.
 - **The agent is observable in Splunk, not just its results.** kassi reads Splunk to observe the
   target; it then publishes its *own* execution back to Splunk over HEC, one `kassi:step` event
   per state-machine phase (its card, outcome, and the tool calls it made) alongside the run
@@ -213,22 +210,21 @@ forecast, a regression the error rate would miss entirely.
 - The result loop closes back into Splunk: every run publishes its verdict and metrics to
   `index=kassi_runs` over HEC, and a Splunk dashboard renders the client-and-server join over
   time, so the analysis lives where the ops team already works.
-- A practical, cited analysis (root cause, evidence, recommendation), written by a local
-  **IBM Granite 4.1** model that grounds every fact on the run's evidence documents via its
-  native document role, so the writeup is attributable and resistant to hallucination, and it
-  runs fully offline with no hosted-API dependency.
+- A practical, cited analysis (root cause, evidence, recommendation), written by the configured
+  model and grounded on the run's evidence documents, so the writeup is attributable and resistant
+  to hallucination. With a local open model the writeup runs fully offline, no hosted-API dependency.
 - The loop closes both ways: kassi does not just diagnose, it proposes the fix. From the diff
   that introduced the regression and the correlated root cause, the model writes a minimal
   unified **remediation diff** (for review, not auto-applied), so a change comes in and a change
   that fixes it goes out.
-- The whole loop, including the remediation, runs on a single local 8B model (IBM Granite 4.1,
-  the first ISO/IEC 42001-certified open-source LLM), so kassi is deployable on-prem or
-  air-gapped with no code or telemetry leaving the building and no per-token cost.
-- The published analysis is screened by an independent model. A separate Granite Guardian 4.1
-  phase judges whether the writeup is grounded in the telemetry it cites and seals that verdict to
-  the ledger, so the writer model is audited by a second model rather than trusted on its own word.
+- Because the model is swappable, the whole loop (analysis and remediation included) scales from a
+  single local open 8B, so kassi is deployable on-prem or air-gapped with no code or telemetry
+  leaving the building and no per-token cost, up to a frontier model when the diagnosis warrants it.
+- The published analysis is screened by an **independent auditor model**. A separate `screen` phase
+  judges whether the writeup is grounded in the telemetry it cites and seals that verdict to the
+  ledger, so the writer is audited rather than trusted on its own word.
 - The whole agent runs locally, including the part that *drives* it: `kassi pilot` lets a local
-  Granite model walk the state machine itself, so driver, writer, and auditor are all on-box, with
+  open model walk the state machine itself, so driver, writer, and auditor are all on-box, with
   no cloud agent in the loop.
 - The agent publishes its own state-machine walk back to Splunk, so kassi is observable in the
   same system it reads, the dashboard shows not just what the change did but how the agent decided.
@@ -238,25 +234,51 @@ forecast, a regression the error rate would miss entirely.
 We did not want to claim kassi "correlates problems" on the strength of a demo, so we built a
 reproducible, ground-truth benchmark for exactly that and ran it against live Splunk. 80 runs span
 five change-induced fault classes (a 5xx regression, two latency degradations, 4xx throttling, a
-downstream 504 cascade) plus three healthy controls, ten reps each, with a deterministic load so the
-only variable is kassi's correlation. Each run is scored on kassi's actual verdict against the known
-fault: detection, endpoint localization, failure-class, and root cause, and, for the controls, that
-kassi stays silent.
+downstream 504 cascade) plus three healthy controls, ten reps each. The model is in the loop on
+every run: it authors the k6 load test, writes the cited analysis, and a separate guardian pass
+audits it, while the pass/fail verdict is computed deterministically from the Splunk correlation, so
+a run cannot pass on a hallucinated analysis. The model is pluggable behind one interface (a local 8B
+over Ollama, or a frontier model over the Claude Agent SDK); the harness is the same, which is the
+point. Each run is scored on kassi's actual verdict against the known fault: detection, endpoint
+localization, failure-class, and root cause, and, for the controls, that kassi stays silent.
 
-kassi is correct on all 80 runs: 100% on detection, localization, failure-class, and root cause
-across the 50 fault runs, and a 0% false-alarm rate across the 30 healthy controls.
+Across the 50 fault runs kassi detects 90%, localizes 92%, classifies 90%, and names the root cause
+95% of the time; across the 30 healthy controls the false-alarm rate is 0%. The handful of misses are
+runs where the model-authored load did not push the endpoint hard enough to surface a borderline
+degradation, an honest property of letting the model write the test, never a control firing on a
+healthy endpoint.
 
-The benchmark earned that by failing first. Its opening run exposed two real defects in kassi's
-verdict logic, both now fixed and locked in by a regression test: 4xx throttling was mislabeled
-"latency degradation" (there was no throttling branch), and healthy endpoints cried wolf when
-anomalydetection annotated a single bucket on sub-10ms jitter (there was no latency floor). The
-controls exist to catch the second, and they did. That is the point of a benchmark.
+To show the diagnosis is not tied to our own demo apps, **kassi-bench-ext** points kassi at
+go-httpbin, a third-party OSS app it never instrumented, observed only through a generic access-log
+proxy that ships the app's traffic into Splunk the way a real gateway would. kassi scored 15/15: it
+called the erroring endpoint a regression, the slow one a degradation, and stayed silent on the
+healthy control, on an app it had never seen.
 
-This is deliberately distinct from infrastructure-fault RCA benchmarks (RCAEval, PetShop, LEMMA-RCA),
-which inject CPU/memory/network faults and score over pre-recorded traces. Here the fault is a real
-code change, exercised live by k6, and diagnosed from Splunk over the exact test window. The harness,
-the raw results, and the full table are in the repo: `scripts/benchmark.py` and
-`docs/benchmark/BENCHMARK.md`, reproducible with one command.
+The benchmark earned those numbers by failing first. The runs exposed three real defects, each now
+fixed and locked in by a regression test: 4xx throttling was mislabeled "latency degradation" (no
+throttling branch); a healthy endpoint behind the proxy cried wolf when anomalydetection annotated a
+single bucket on its low-but-not-zero latency (the floor was too low and not forecast-aware); and an
+always-failing endpoint tripped k6's thresholds during validation, which kassi read as a broken
+script and refused to run, when a crossed threshold is the finding, not a syntax error. The controls
+and the external app exist to surface exactly this kind of thing, and they did.
+
+**Canonical benchmark (RCAEval RE3).** kassi-bench measures the live k6 -> Splunk loop on our own
+apps. To check the diagnosis engine against a recognized academic benchmark, we ran kassi on
+[RCAEval](https://github.com/phamquiluan/RCAEval) RE3, its code-level-fault suite for Online Boutique
+and Train Ticket. RE3 ships pre-recorded distributed traces with the root-cause service as ground
+truth, scored by top-k localization. We project each case's recorded spans into Splunk in the
+access-log shape kassi reads in production and run kassi's real correlation plus a baseline-relative
+latency-anomaly score, then score the ranked services with RCAEval's own `Evaluator`. Across 57
+cases kassi localizes the root-cause service at top-1 in **81%** of cases (90% on Online Boutique)
+and within top-3 in **100%**; published RE3 baselines commonly report AC@1 in the 0.3-0.6 range. This
+tests the correlation engine, not the live loop (RE3 bakes the load into the traces), and Sock Shop
+is excluded because its RE3 release ships only aggregated mesh metrics, no request-level traces.
+
+Both suites are deliberately distinct from infrastructure-fault RCA benchmarks that inject
+CPU/memory/network faults and score offline: kassi-bench exercises a real code change live through k6
+and Splunk, and the RCAEval run scores the same diagnosis engine on a canonical, recognized dataset.
+The harnesses, the raw results, and the full tables are in the repo: `scripts/benchmark.py`,
+`scripts/benchmark_rcaeval.py`, and `docs/benchmark/BENCHMARK.md`, each reproducible with one command.
 
 ## What we learned
 
@@ -281,9 +303,8 @@ the raw results, and the full table are in the repo: `scripts/benchmark.py` and
 - Grow synthetic load generation: schema-aware request synthesis, realistic traffic mixes
   and ramps, and seeded fault scenarios so a single intent produces a richer, more
   representative test rather than a static replay.
-- Run kassi-bench against the standard RCA benchmark systems (RCAEval's Sock Shop and Train Ticket)
-  for a cross-system comparison against published baselines, and grow the suite past five fault
-  classes.
+- Extend the RCAEval run past RE3 (RE1/RE2, and Sock Shop once trace-level telemetry is available)
+  and grow kassi-bench past five fault classes for broader cross-system coverage.
 
 ## Additional information
 
@@ -311,9 +332,10 @@ slots into the SDLC at the pull request, but Observability is the primary track.
 
 To not overstate anything: kassi does **not** use Splunk Hosted Models, the Splunk AI Assistant for
 SPL (it composes its SPL in pure Python by design, and the model never writes SPL), or the
-AI-for-Splunk-Apps Python SDK. The reasoning models in the loop (writer, auditor, driver) are a
-local IBM Granite 4.1 family on Ollama, not Splunk-hosted. A Splunk-hosted root-cause narrative and
-AI-Assistant SPL generation are listed under "What's next," not claimed here.
+AI-for-Splunk-Apps Python SDK. The reasoning models in the loop (writer, auditor, driver) are
+pluggable, a local open model on Ollama or a frontier model via the Claude Agent SDK, none of them
+Splunk-hosted. A Splunk-hosted root-cause narrative and AI-Assistant SPL generation are listed under
+"What's next," not claimed here.
 
 **Bonus prizes.** Primary is **Best Use of Splunk MCP Server**: the whole observability correlation
 is orchestrated through it. The project also builds on the Splunk developer ecosystem (the MCP
@@ -328,8 +350,8 @@ k6 test from the OpenAPI spec. The rest is new, built during this submission per
 state machine over MCP, and it now drives k6 through the official Grafana k6 2.0 MCP server
 (`k6 x mcp`) instead of shelling out to the binary. The whole Splunk side is new: it correlates the
 load test with Splunk telemetry through the official Splunk MCP Server, forecasts with the Splunk AI
-Toolkit, runs local Granite models for the analysis and a groundedness audit, proposes a remediation
-diff, and publishes its own run back to Splunk.
+Toolkit, runs the configured model for the analysis and an independent groundedness audit, proposes a
+remediation diff, and publishes its own run back to Splunk.
 
 **How to test it.** The repository is public and open source (Apache-2.0, license at the repo
 root). Two paths:

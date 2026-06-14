@@ -41,7 +41,7 @@ Built for the Splunk Agentic Ops Hackathon (Observability track). See
 
 The demo above is recorded from [`docs/demo.tape`](docs/demo.tape) with
 [vhs](https://github.com/charmbracelet/vhs): it prints the state machine, then drives the
-whole workflow end-to-end (script + analysis from the local Granite 4.1 model, k6 docs + run,
+whole workflow end-to-end (script + analysis from the configured model, k6 docs + run,
 Splunk preflight and correlation) against a live Splunk.
 
 ### Screenshots
@@ -80,18 +80,18 @@ kassi warm-k6
 
 The model authors the k6 script (on top of the deterministic scaffold), writes a cited
 analysis of the result, and narrates the run as a tarot reading; it never writes SPL. The
-default backend is a local [Ollama](https://ollama.com) model, **IBM Granite 4.1**
-(`granite4.1:8b`), whose chat template natively grounds the analysis on the run's evidence
-documents, so the writeup stays to the numbers kassi measured (and cites their source) rather
-than inventing them. Set `KASSI_LLM=anthropic` for the Claude Messages API instead
-(`claude-haiku-4-5`, needs `ANTHROPIC_API_KEY`). If the backend is unreachable, kassi runs the
+backend is pluggable behind one `LLM` interface, selected by `KASSI_LLM`: a local
+[Ollama](https://ollama.com) model (e.g. `granite4.1:8b`, whose chat template natively grounds the
+analysis on the run's evidence documents so the writeup stays to the numbers kassi measured), or a
+frontier model over the **Claude Agent SDK** (`KASSI_LLM=claude_agent`, which uses a logged-in
+Claude Code session rather than an API key). If the backend is unreachable, kassi runs the
 deterministic scaffold and a deterministic analysis, so a run never fails for lack of a model.
 
 The model is pluggable, both for the per-phase work and for *driving* the FSM (`kassi pilot`, or
 any MCP client). The orchestration, the audited Burr graph over MCP, is model-neutral, so the
-architecture scales with the model rather than depending on one. Granite 4.1 is the default
-because it proves the whole loop, drive, write, and audit, fits on a local 8B with no cloud
-dependency; swap in a larger or hosted model and nothing else changes.
+architecture scales **with** the model rather than depending on one: the same harness runs the whole
+loop (drive, write, audit) on a local 8B with no cloud dependency, and scales up to a frontier model
+unchanged.
 
 The Splunk step is optional: without `KASSI_SPLUNK_MCP_ENDPOINT` + `KASSI_SPLUNK_TOKEN`
 set, kassi skips correlation and runs k6-only.
@@ -106,9 +106,9 @@ kassi render               # print the state machine
 kassi serve                # mount as an MCP server over stdio (both upstreams wired in)
 ```
 
-Drive it locally with Granite, no cloud agent. `kassi pilot` lets the local Granite model
+Drive it locally, no cloud agent. `kassi pilot` lets a local open model
 drive the FSM step by step: it reads the reachable actions and calls `step` for each phase
-itself, doing the per-phase work as it goes (the `screen` phase hands off to Granite Guardian).
+itself, doing the per-phase work as it goes (the `screen` phase hands off to an independent auditor).
 Driver, writer, and auditor are all the local model:
 
 ```bash
@@ -241,10 +241,11 @@ stateDiagram-v2
   numbers; and, in diff mode, a **proposed remediation** (a minimal unified diff that fixes the
   root cause, written from the diff that introduced it) for human review. Both fall back to
   deterministic text when the model is absent.
-- `screen` is the **auditor** phase: a separate **Granite Guardian 4.1** model judges whether
-  the analysis is grounded in the evidence it cites (any claim unsupported by or contradicting
-  the telemetry), and the pass/fail is sealed to the report. The writer is checked by a second
-  model, not trusted on its own word. Non-blocking: skipped when Guardian is off.
+- `screen` is the **auditor** phase: a separate **independent auditor model** (Granite Guardian
+  with the local backend, or the frontier model in audit mode) judges whether the analysis is
+  grounded in the evidence it cites (any claim unsupported by or contradicting the telemetry), and
+  the pass/fail is sealed to the report. The writer is checked by a second model, not trusted on its
+  own word. Non-blocking: skipped when the auditor is off.
 - `report` assembles the combined client plus server verdict and the tarot **narration** (one
   line per phase, deterministic omens when the model is absent). Every upstream tool call is
   logged to `mcp_provenance`. The run is published to Splunk twice over: a `kassi:run` summary,
@@ -357,15 +358,24 @@ uv run python scripts/verify_scenario.py feed   # or petclinic | storefront | ga
 
 `kassi-bench` scores kassi against ground truth: 80 live runs over five change-induced fault classes
 (5xx regression, two latency degradations, 4xx throttling, a 504 cascade) plus three healthy
-controls, ten reps each, deterministic load, scored on kassi's actual verdict. kassi is correct on
-all 80: 100% detection, localization, failure-class, and root cause across the faults, and 0% false
-alarms on the controls. The suite found and fixed two real verdict bugs along the way (a missing
-throttling branch, a missing latency floor). Full methodology and the table:
+controls, ten reps each, with the model authoring the load test and analysis and the verdict computed
+deterministically from Splunk. Across the faults kassi detects 90%, localizes 92%, classifies 90%,
+and names the root cause 95%; the controls hold a 0% false-alarm rate. A second suite,
+`kassi-bench-ext`, runs kassi against go-httpbin (a third-party app it never instrumented, observed
+through a generic access-log proxy) and scores 15/15. Against the canonical academic benchmark
+**RCAEval RE3** (code-level faults in Online Boutique and Train Ticket), kassi's diagnosis engine
+localizes the root-cause service at top-1 in **81%** of 57 cases and within top-3 in **100%**, where
+published baselines report AC@1 in the 0.3-0.6 range. Between them the suites found and fixed three
+real bugs: a missing throttling branch, a too-low latency floor, and a validation step that read a
+crossed k6 threshold as a broken script. Full methodology and tables:
 [`docs/benchmark/BENCHMARK.md`](docs/benchmark/BENCHMARK.md).
 
 ```bash
-uv run python scripts/benchmark.py --reps 10     # writes docs/benchmark/results.json
-uv run python scripts/benchmark_report.py        # regenerates the report
+uv run python scripts/benchmark.py --reps 10            # demo suite -> docs/benchmark/results.json
+docker run -d -p 8600:8080 ghcr.io/mccutchen/go-httpbin
+uv run python scripts/benchmark_external.py --reps 5    # external suite (go-httpbin via the proxy)
+uv run python scripts/benchmark_rcaeval.py --systems OB,TT   # canonical RCAEval RE3 (after download)
+uv run python scripts/benchmark_report.py               # regenerates the report
 ```
 
 ## Dashboard
