@@ -35,9 +35,11 @@ people and process rather than technology, and change is the single biggest caus
 why "change failure rate" is one of the four DORA metrics teams are measured on. And every
 engineer has been Cassandra about a change: you sensed it was risky, you couldn't prove it, it
 shipped, and it took down prod at 2am. The warning existed; it just wasn't believed. The reason
-is structural, a change's real impact only surfaces in server-side telemetry once something
-exercises the system, and catching it means generating traffic, digging through Splunk, and
-correlating the two by hand, after the fact. So it almost never happens before production.
+is structural: a change can pass every unit and integration test and still hide a fatal flaw, a
+lock, an N+1 query, an unbounded loop, that only manifests under concurrent load. A unit test
+checks that one request is correct; it cannot see what breaks when a thousand arrive at once. That
+impact surfaces only in server-side telemetry once something exercises the system, and catching it
+means generating traffic, digging through Splunk, and correlating the two by hand, after the fact. So it almost never happens before production.
 
 kassi is the seer that gets believed. It closes the loop autonomously: take a change, exercise
 the affected endpoints, and read the server-side truth from Splunk in one pass, root cause,
