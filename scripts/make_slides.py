@@ -99,6 +99,13 @@ SLIDES = [
         "accent": "Real app, real k6, the official Splunk MCP Server, a local model.",
         "body": ["Two changes, two different failure signatures — same agent, same dashboard."],
     },
+    {  # 5. THANK YOU
+        "kicker": "SPLUNK AGENTIC OPS HACKATHON  ·  OBSERVABILITY",
+        "title": "Thank you!",
+        "title_size": 150,
+        "accent": "Divines disaster, crafts the cure.",
+        "body": ["kassi  ·  an AI agent that finds the regression in Splunk, and writes the fix."],
+    },
 ]
 
 
