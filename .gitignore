@@ -22,3 +22,6 @@ info.md
 
 # Splunkbase add-on packages (e.g. Python for Scientific Computing), downloaded locally
 *.tgz
+
+# demo video clips (deliverables, not repo assets)
+docs/clips/

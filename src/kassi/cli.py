@@ -35,6 +35,53 @@ def _outcome_color(stage: str) -> str:
     return _GREEN
 
 
+def _phase_detail(action: str, st: dict) -> tuple[str, str]:
+    """The trustworthy per-phase detail, read from the step payload's state: which MCP tools the
+    phase called, and the key fact it produced. Returns (tool-calls summary, facts)."""
+    calls = [c for c in (st.get("mcp_calls") or []) if c.get("phase") == action]
+    tools = ""
+    if calls:
+        srv = calls[0]["server"]
+        counts: dict[str, int] = {}
+        for c in calls:
+            name = c["tool"][len(srv) + 1 :] if c["tool"].startswith(srv + "_") else c["tool"]
+            counts[name] = counts.get(name, 0) + 1
+        parts = [f"{t}x{n}" if n > 1 else t for t, n in counts.items()]
+        tools = f"{srv}: " + ", ".join(parts)
+    findings = (st.get("correlation") or {}).get("findings") or {}
+    facts = ""
+    if action in ("parse_intent", "extract_endpoints"):
+        facts = ", ".join(f"{e['method']} {e['path']}" for e in (st.get("endpoints") or [])[:2])
+    elif action == "run_test":
+        rr = st.get("run_result") or {}
+        if rr:
+            pct = round((rr.get("http_req_failed_rate") or 0) * 100)
+            facts = f"{rr.get('http_reqs')} reqs, p95 {rr.get('http_req_duration_p95_ms')}ms, {pct}% failed"
+    elif action == "splunk_preflight":
+        pf = st.get("splunk_preflight") or {}
+        facts = f"index {pf.get('index')}, {pf.get('event_count')} events"
+    elif action == "correlate":
+        wp, te = findings.get("worst_path") or {}, findings.get("top_error") or {}
+        if wp:
+            facts = f"{wp.get('path')} {wp.get('err_pct')}% 5xx, {te.get('error_message')}"
+    elif action == "detect_anomalies":
+        an = st.get("anomalies") or {}
+        facts = f"forecast p95 {an.get('forecast_p95_ms')}ms, {an.get('anomalous_buckets')} anomalous"
+    elif action == "analyze":
+        rec = (st.get("recommendation") or "").strip()
+        facts = rec[:58].rsplit(" ", 1)[0] + "..." if len(rec) > 58 else rec
+    elif action == "screen":
+        g = st.get("groundedness") or {}
+        facts = (
+            "verified against the evidence"
+            if g.get("grounded")
+            else ("flagged ungrounded" if g.get("available") else "")
+        )
+    elif action == "report":
+        facts = "published to Splunk, sealed to the ledger"
+    return tools, facts
+
+
 def main() -> int:
     # Load KASSI_* / OLLAMA_* settings from a project .env (e.g. the Splunk endpoint
     # and token). Real environment variables already set take precedence.
@@ -101,10 +148,17 @@ def main() -> int:
             else:
                 status = st.get("stage") or "ok"
             col = _outcome_color(status)
+            tools, facts = _phase_detail(action, st)
+            if tools and facts:
+                detail = f"{_CYAN}{tools}{_RESET}  {_DIM}·  {facts}{_RESET}"
+            elif tools:
+                detail = f"{_CYAN}{tools}{_RESET}"
+            else:
+                detail = f"{_DIM}{facts}{_RESET}"
             print(
-                f"{_DIM}{arcana.SIGIL}{_RESET}  {_DIM}{num:>4}{_RESET}  "
-                f"{_BOLD}{_MAGENTA}{card:<18}{_RESET}{_DIM}{action:<18}{_RESET}"
-                f"{_DIM}→{_RESET} {col}{status}{_RESET}"
+                f"{_DIM}{arcana.SIGIL}{_RESET} {_DIM}{num:>4}{_RESET}  "
+                f"{_BOLD}{_MAGENTA}{card:<19}{_RESET}{_DIM}{action:<18}{_RESET}"
+                f"{_DIM}→{_RESET} {col}{status:<11}{_RESET} {detail}"
             )
 
         server = mount(build_application, name="kassi", upstream=upstream())
@@ -124,6 +178,10 @@ def main() -> int:
         )
         if verdict:
             print(f"{arcana.SIGIL}  {_BOLD}verdict:{_RESET} {_outcome_color(verdict)}{verdict}{_RESET}")
+        narration = (report or {}).get("narration") if isinstance(report, dict) else None
+        if narration:
+            print(f"\n{_DIM}{arcana.SIGIL}  the reading (model narration):{_RESET}")
+            print(narration)
 
     @cli.command("warm-k6")
     def warm_k6() -> None:
