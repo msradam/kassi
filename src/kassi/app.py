@@ -908,9 +908,9 @@ async def _remediate(state: State, verdict: str) -> str | None:
         return None
     source = src_file.read_text()
     documents = remediate.documents(source, findings, analysis.recommend(findings))
-    instruction = f"Propose the minimal fix for the root cause that clears this regression: {verdict}."
+    instruction = f"Propose the minimal code fix for the root cause that resolves this finding: {verdict}."
 
-    for _ in range(2):  # ensemble: first edit that applies cleanly and still parses wins
+    for _ in range(3):  # ensemble: first edit that applies cleanly and still parses wins
         try:
             text = await asyncio.to_thread(
                 make_llm().generate,
@@ -920,7 +920,7 @@ async def _remediate(state: State, verdict: str) -> str | None:
             )
         except LLMError as exc:
             log.warning("remediation_llm_failed", error=str(exc))
-            return None
+            continue  # transient (e.g. a rate-limited model call); try the next ensemble attempt
         patched = remediate.apply_blocks(source, remediate.parse_blocks(text))
         if patched and remediate.valid_python(patched):
             log.info("remediation_ok", file=path)

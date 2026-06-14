@@ -84,20 +84,31 @@ def unified(old: str, new: str, path: str) -> str:
 
 
 def documents(source: str, findings: dict[str, Any], recommendation: str) -> list[tuple[str, str]]:
-    """Grounding for the edit: the file to fix, the correlated root cause, and the approach."""
+    """Grounding for the edit: the file to fix, the correlated root cause, and the approach.
+
+    Two root-cause shapes: a 5xx regression names a dominant server error; a latency degradation
+    has no error at all, so the cause is the rising server-side time itself. Grounding the model on
+    a fake "server error" for a degradation is what kept it from proposing a fix, so describe the
+    latency cause directly when there is no error string."""
     te = findings.get("top_error") or {}
     wp = findings.get("worst_path") or {}
-    cause = te.get("error_message") or "server-side regression"
+    path = wp.get("path") or "the changed endpoint"
+    p95 = wp.get("p95_ms") or findings.get("p95_ms")
     docs: list[tuple[str, str]] = [("current file", source[:6000])]
-    docs.append(
-        (
-            "root cause",
-            f"dominant server error '{cause}'"
+    if te.get("error_message"):
+        cause = (
+            f"dominant server error '{te['error_message']}'"
             + (f" x{te.get('count')}" if te.get("count") else "")
-            + (f" on {wp.get('path')}" if wp.get("path") else "")
-            + " under concurrency (only appears under load)",
+            + f" on {path} under concurrency (only appears under load)"
         )
-    )
+    else:
+        cause = (
+            f"latency degradation on {path}: server-side p95"
+            + (f" {p95} ms" if p95 else "")
+            + " climbs under sustained load with zero errors, because the per-request server-side "
+            "work grows with the traffic already sent. Fix the algorithmic/work-per-request growth."
+        )
+    docs.append(("root cause", cause))
     if recommendation:
         docs.append(("recommended approach (apply this)", recommendation))
     return docs

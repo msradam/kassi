@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import os
 import threading
+from contextlib import aclosing
 from typing import Any, Protocol
 
 import httpx
@@ -272,16 +273,23 @@ class ClaudeAgentLLM:
             setting_sources=[],
         )
         out: list[str] = []
+        sdk_error: str | None = None
+        # `aclosing` guarantees the query generator (and its `claude` subprocess transport) is shut
+        # down while the event loop is still alive. Raising mid-iteration instead abandons it, and
+        # the loop then closes with the subprocess still attached, which corrupts the next call on a
+        # fresh loop (the "asynchronous generator is already running" failure on the ensemble retry).
         try:
-            async for message in query(prompt=user, options=options):
-                if isinstance(message, AssistantMessage):
-                    out.extend(b.text for b in message.content if isinstance(b, TextBlock))
-                elif isinstance(message, ResultMessage) and getattr(message, "is_error", False):
-                    raise LLMError(f"Claude Agent SDK error: {getattr(message, 'result', None)}")
-        except LLMError:
-            raise
+            async with aclosing(query(prompt=user, options=options)) as stream:
+                async for message in stream:
+                    if isinstance(message, AssistantMessage):
+                        out.extend(b.text for b in message.content if isinstance(b, TextBlock))
+                    elif isinstance(message, ResultMessage) and getattr(message, "is_error", False):
+                        sdk_error = str(getattr(message, "result", None))
+                        break
         except Exception as exc:  # noqa: BLE001 - surface SDK/transport failures uniformly
             raise LLMError(f"Claude Agent SDK request failed: {exc}") from exc
+        if sdk_error is not None:
+            raise LLMError(f"Claude Agent SDK error: {sdk_error}")
         return "".join(out)
 
 
