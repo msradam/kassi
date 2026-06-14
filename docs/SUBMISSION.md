@@ -294,9 +294,10 @@ lighter of the two claims.
 **New or significantly updated.** Significantly updated. kassi extends an earlier project of mine,
 Kassandra (github.com/msradam/kassandra), which generated k6 load tests from a git diff. That
 diff-to-k6 idea is the shared part: read a diff, pick the changed endpoints, and generate a targeted
-k6 test from the OpenAPI spec. Everything tied to Splunk is new, built during this submission period:
-the workflow was rebuilt as an audited Burr state machine over MCP, and it now correlates the load
-test with Splunk telemetry through the official Splunk MCP Server, forecasts with the Splunk AI
+k6 test from the OpenAPI spec. The rest is new, built during this submission period. The workflow was rebuilt as an audited Burr
+state machine over MCP, and it now drives k6 through the official Grafana k6 2.0 MCP server
+(`k6 x mcp`) instead of shelling out to the binary. The whole Splunk side is new: it correlates the
+load test with Splunk telemetry through the official Splunk MCP Server, forecasts with the Splunk AI
 Toolkit, runs local Granite models for the analysis and a groundedness audit, proposes a remediation
 diff, and publishes its own run back to Splunk.
 
