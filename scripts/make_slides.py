@@ -17,6 +17,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 ROOT = Path(__file__).resolve().parents[1]
 DECK = ROOT / "docs" / "deck"
+ASSETS = ROOT / "docs" / "assets"
 
 WHITE = (236, 238, 243)
 GRAY = (171, 178, 191)
@@ -52,6 +53,18 @@ def vgradient(w: int, h: int) -> Image.Image:
     return base
 
 
+def hero_icon(height: int) -> Image.Image:
+    """The tarot icon recolored to the accent, sized to `height` (matches the cover)."""
+    icon = Image.open(ASSETS / "kassi-tarot.png").convert("RGBA")
+    w, h = icon.size
+    icon = icon.crop((0, 0, w, int(h * 0.85)))  # drop the baked-in credit line
+    icon = icon.crop(icon.split()[3].getbbox())
+    tinted = Image.new("RGBA", icon.size, (0, 0, 0, 0))
+    tinted.paste(Image.new("RGBA", icon.size, (*ACCENT, 255)), (0, 0), icon.split()[3])
+    iw = round(tinted.width * height / tinted.height)
+    return tinted.resize((iw, height), Image.LANCZOS)
+
+
 # Each slide: kicker, optional huge `big`, optional `title`, optional `accent` (italic), body lines.
 # Ordered for a sub-3-minute demo: hook, one dense pitch slide, then straight to the live demo with
 # a card per scenario, then the close. The judge sees the essentials in the first 20 seconds.
@@ -61,10 +74,10 @@ SLIDES = [
         "title": "kassi",
         "title_size": 150,
         "accent": "Divines disaster, crafts the cure.",
+        "hero_icon": True,
         "body": [
-            "An AI agent that load-tests a code change, finds the regression in Splunk,",
-            "and writes the fix. A model-agnostic state machine over MCP, driven by any",
-            "model down to a local 8B. Splunk MCP Server + AI Toolkit, live at runtime.",
+            "An AI agent that load-tests a code change,",
+            "finds the regression in Splunk, writes the fix.",
         ],
     },
     {  # 2. WHY
@@ -116,6 +129,11 @@ def render(slide: dict, index: int, total: int) -> Image.Image:
     d = ImageDraw.Draw(img)
     for inset, width, col in ((40 * s, 3 * s, DIM), (52 * s, 1 * s, FRAME)):
         d.rectangle((inset, inset, W - inset, H - inset), outline=col, width=width)
+
+    if slide.get("hero_icon"):
+        ih = 520 * s
+        ic = hero_icon(ih)
+        img.paste(ic, (1480 * s - ic.width // 2, (H - ih) // 2 - 20 * s), ic)
 
     x = 150 * s
     if slide.get("kicker"):
