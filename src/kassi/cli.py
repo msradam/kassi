@@ -23,7 +23,25 @@ from kassi.upstream import k6_warm_command, upstream
 
 # ANSI palette for the pilot stream, keyed to kassi's magenta cover scheme.
 _MAGENTA, _CYAN, _GREEN, _YELLOW = "\033[38;5;205m", "\033[38;5;80m", "\033[38;5;78m", "\033[38;5;179m"
+_RED = "\033[38;5;167m"
 _DIM, _BOLD, _RESET = "\033[2m", "\033[1m", "\033[0m"
+
+
+def _color_diff(diff: str) -> str:
+    """Render a unified diff with added/removed lines colored, for the pilot summary."""
+    out = []
+    for line in diff.splitlines():
+        if line.startswith(("+++", "---")):
+            out.append(f"{_BOLD}{line}{_RESET}")
+        elif line.startswith("@@"):
+            out.append(f"{_CYAN}{line}{_RESET}")
+        elif line.startswith("+"):
+            out.append(f"{_GREEN}{line}{_RESET}")
+        elif line.startswith("-"):
+            out.append(f"{_RED}{line}{_RESET}")
+        else:
+            out.append(f"{_DIM}{line}{_RESET}")
+    return "\n".join(out)
 
 
 def _outcome_color(stage: str) -> str:
@@ -179,6 +197,13 @@ def main() -> int:
         )
         if verdict:
             print(f"{arcana.SIGIL}  {_BOLD}verdict:{_RESET} {_outcome_color(verdict)}{verdict}{_RESET}")
+        remediation = (report or {}).get("remediation") if isinstance(report, dict) else None
+        if remediation:
+            print(
+                f"\n{_BOLD}{arcana.SIGIL}  proposed fix{_RESET} "
+                f"{_DIM}(validated diff: applies cleanly and still parses; review before merging){_RESET}"
+            )
+            print(_color_diff(remediation))
         narration = (report or {}).get("narration") if isinstance(report, dict) else None
         if narration:
             print(f"\n{_DIM}{arcana.SIGIL}  the reading (model narration):{_RESET}")
