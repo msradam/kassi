@@ -53,21 +53,28 @@ def _parse_score(text: str) -> str | None:
     return None
 
 
+_AGENT_BACKENDS = {"claude_agent", "claude-agent", "agent", "claude_code", "claude-code"}
+
+
 class Guardian:
     def __init__(
         self,
         model: str = DEFAULT_GUARDIAN_MODEL,
         host: str | None = None,
         timeout: float = 120.0,
+        use_agent: bool = False,
     ) -> None:
         self.model = model
         self.host = host or os.environ.get("OLLAMA_HOST", "http://localhost:11434")
         self.timeout = timeout
+        self.use_agent = use_agent
 
     def groundedness(self, *, context: str, response: str) -> dict:
         """Judge whether `response` is grounded in `context`. Returns a verdict dict; on any
         transport error it is marked unavailable rather than raising, so the screen phase degrades
         gracefully like the other model-backed phases."""
+        if self.use_agent:
+            return self._groundedness_agent(context=context, response=response)
         payload = {
             "model": self.model,
             "messages": [
@@ -100,6 +107,43 @@ class Guardian:
             "model": self.model,
         }
 
+    def _groundedness_agent(self, *, context: str, response: str) -> dict:
+        """Same groundedness judgement driven through the Claude Agent SDK (Claude Code session)
+        instead of Granite Guardian, for runs where the writer is also Claude. Returns the same
+        verdict shape; degrades to unavailable on any error."""
+        from kassi.llm import ClaudeAgentLLM, LLMError
+
+        system = (
+            f"{_JUDGE_NOTHINK}\n\n### Criteria: {_CRITERIA}\n\n### Scoring Schema: {_SCHEMA}\n\n"
+            "Reply with exactly one token wrapped in a score tag: <score>yes</score> or "
+            "<score>no</score>. 'yes' means the text is ungrounded; 'no' means it is grounded."
+        )
+        user = f"### Document(s)\n{context}\n\n### Text to judge\n{response}"
+        try:
+            raw = ClaudeAgentLLM(model=self.model).generate(system=system, user=user)
+        except LLMError as exc:
+            return {
+                "available": False,
+                "grounded": None,
+                "label": None,
+                "model": self.model,
+                "error": str(exc),
+            }
+        score = _parse_score(raw)
+        return {
+            "available": True,
+            "grounded": None if score is None else score == "no",
+            "label": score or raw,
+            "risk": GROUNDEDNESS,
+            "model": self.model,
+        }
+
 
 def make_guardian() -> Guardian:
+    backend = os.environ.get("KASSI_LLM", "ollama").strip().lower()
+    if backend in _AGENT_BACKENDS:
+        model = os.environ.get("KASSI_GUARDIAN_MODEL", "")
+        if not model or model == DEFAULT_GUARDIAN_MODEL:
+            model = os.environ.get("KASSI_MODEL", "sonnet")
+        return Guardian(model=model, use_agent=True)
     return Guardian(model=os.environ.get("KASSI_GUARDIAN_MODEL", DEFAULT_GUARDIAN_MODEL))
