@@ -40,25 +40,22 @@ Editing notes:
 ## Re-recording (only if you want a fresh take)
 
 Setup (one-time): Splunk up locally (`~/splunk/bin/splunk status`), `.env` present, Granite +
-Guardian pulled on the Mini, then `uv run kassi warm-k6` and `uv run python scripts/setup_dashboard.py`.
+Guardian pulled and reachable via `OLLAMA_HOST`, then `uv run kassi warm-k6` and
+`uv run python scripts/setup_dashboard.py`.
 
-Rebuild the clips:
+Rebuild a scenario's data + terminal capture (petclinic on :8400, feed on :8402):
 ```bash
-# build the stable before/after demo repos (git diff HEAD~1 reads like a PR)
-uv run python scripts/make_demo_repo.py petclinic
-uv run python scripts/make_demo_repo.py feed
+# build the before/after demo repo (git diff HEAD~1 reads like a PR) and capture a diff-mode
+# pilot run: starts the app, Granite drives the FSM, saves the streamed cards to /tmp/pilot_<name>.ansi
+bash scripts/capture_pilot.sh petclinic 8400      # ~8-10 min; also publishes the run to Splunk
 
-# capture a diff-mode pilot run (starts the app, Granite drives, saves /tmp/pilot_<name>.ansi)
-bash /tmp/cap_scenario.sh petclinic 8400      # ~8-10 min on the Mini
-bash /tmp/cap_scenario.sh feed 8402
+# the terminal clip replays that capture at a readable pace (scripts/replay_pilot.sh);
+# drive it from a short vhs tape that types the scene (git diff) then `kassi pilot`.
 
-# terminal clips replay the captured run at a readable pace, via vhs
-vhs /tmp/clip_petclinic.tape ; vhs /tmp/clip_feed.tape
-
-# dashboards (purge to the one run first for a clean view)
-uv run python /tmp/purge.py
+# the dashboard clip (purge to the one run first for a clean view):
+uv run python scripts/purge_runs.py
 uv run --with playwright python scripts/capture_dashboard_video.py
 ```
 
 If a phase stalls, the k6 extension wasn't warmed (`uv run kassi warm-k6`). If Ollama times out,
-confirm `OLLAMA_HOST` points at the Mini and both models are loaded (`curl $OLLAMA_HOST/api/tags`).
+confirm `OLLAMA_HOST` points at the Ollama host and both models are loaded (`curl $OLLAMA_HOST/api/tags`).

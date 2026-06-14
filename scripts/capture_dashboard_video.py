@@ -53,7 +53,9 @@ def main() -> None:
         state = warm.storage_state()
         warm.close()
 
-        rec = browser.new_context(viewport=VP, storage_state=state, record_video_dir=str(TMP), record_video_size=VP)
+        rec = browser.new_context(
+            viewport=VP, storage_state=state, record_video_dir=str(TMP), record_video_size=VP
+        )
         page = rec.new_page()
         page.goto(DASH, wait_until="domcontentloaded")
         page.wait_for_timeout(9000)  # panels paint from the warm cache

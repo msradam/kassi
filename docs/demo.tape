@@ -17,7 +17,7 @@ Set Padding 18
 Set TypingSpeed 28ms
 
 Hide
-Type "cd /Users/amsrahman/kassi" Enter
+Type "cd \"$(git rev-parse --show-toplevel)\"" Enter
 Type "clear" Enter
 Show
 

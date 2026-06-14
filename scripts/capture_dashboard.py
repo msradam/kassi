@@ -40,7 +40,9 @@ def main() -> None:
         # let every panel's search complete and the charts paint
         page.wait_for_timeout(22000)
 
-        body = page.query_selector(".dashboard-body") or page.query_selector("div[data-view='views/dashboard/Dashboard']")
+        body = page.query_selector(".dashboard-body") or page.query_selector(
+            "div[data-view='views/dashboard/Dashboard']"
+        )
         (body or page).screenshot(path=str(OUT))
         browser.close()
         print(f"wrote {OUT}")

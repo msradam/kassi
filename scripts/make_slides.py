@@ -131,8 +131,18 @@ def render(slide: dict, index: int, total: int) -> Image.Image:
         d.text((x, y), line, font=body_font, fill=GRAY)
         y += 64 * s
 
-    d.text((x, H - 130 * s), "kassi  ·  divines disaster, crafts the cure", font=font("mono", 24 * s), fill=(110, 116, 130))
-    d.text((W - 230 * s, H - 130 * s), f"{index:02d} / {total:02d}", font=font("mono", 24 * s), fill=(110, 116, 130))
+    d.text(
+        (x, H - 130 * s),
+        "kassi  ·  divines disaster, crafts the cure",
+        font=font("mono", 24 * s),
+        fill=(110, 116, 130),
+    )
+    d.text(
+        (W - 230 * s, H - 130 * s),
+        f"{index:02d} / {total:02d}",
+        font=font("mono", 24 * s),
+        fill=(110, 116, 130),
+    )
 
     return img.resize((1920, 1080), Image.LANCZOS)
 

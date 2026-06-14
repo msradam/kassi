@@ -139,9 +139,16 @@ def make_cover(
     img.paste(icon, (icon_cx - iw // 2, (H - ih) // 2 - 4 * s), icon)
 
     x = 78 * s
-    d.text((x, dy + 96 * s), "SPLUNK AGENTIC OPS HACKATHON · OBSERVABILITY", font=font("mono", 19 * s), fill=dim)
+    d.text(
+        (x, dy + 96 * s), "SPLUNK AGENTIC OPS HACKATHON · OBSERVABILITY", font=font("mono", 19 * s), fill=dim
+    )
     d.text((x, dy + 150 * s), "kassi", font=font("serif", 168 * s), fill=WHITE)
-    d.text((x, dy + 360 * s), "Divines disaster, crafts the cure.", font=font("serif_italic", 43 * s), fill=accent)
+    d.text(
+        (x, dy + 360 * s),
+        "Divines disaster, crafts the cure.",
+        font=font("serif_italic", 43 * s),
+        fill=accent,
+    )
 
     sub = font("sans", 27 * s)
     lines = [
