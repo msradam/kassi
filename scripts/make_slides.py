@@ -104,7 +104,7 @@ SLIDES = [
         "title": "Thank you!",
         "title_size": 150,
         "accent": "Divines disaster, crafts the cure.",
-        "body": ["kassi  ·  an AI agent that finds the regression in Splunk, and writes the fix."],
+        "body": ["github.com/msradam/kassi"],
     },
 ]
 
