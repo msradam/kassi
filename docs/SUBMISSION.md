@@ -25,7 +25,8 @@ Splunk, so it is observable in the very system it observes.
 
 Verified end-to-end against Splunk Enterprise 10.4.0 with the official Splunk MCP Server
 (Splunkbase 7931, v1.2.0) and a local IBM Granite 4.1 model. See the case study in the README
-and `docs/SPLUNK_SETUP.md`. Built new during the submission period for this hackathon.
+and `docs/SPLUNK_SETUP.md`. The Splunk agentic-observability layer is new this submission period,
+built on a diff-to-k6 approach from an earlier project of mine (see Additional information).
 
 ## Inspiration
 
@@ -290,8 +291,18 @@ Server and AI Toolkit apps from Splunkbase / dev.splunk.com), the basis for a **
 Developer Tools** consideration; it does not use App Inspect or the Splunk SDK, so that is the
 lighter of the two claims.
 
-**New or significantly updated.** New. kassi was built from scratch during the submission period
-for this hackathon; there is no pre-existing project being repackaged.
+**New or significantly updated.** Significantly updated. kassi builds on an earlier project of mine,
+Kassandra (github.com/msradam/kassandra), and was substantially rebuilt for this hackathon during
+the submission period. What carries over is one idea: read a git diff to pick the changed endpoints,
+and use the OpenAPI spec to generate a targeted k6 load test that catches what a serial test misses.
+Everything this hackathon judges is new, and the kassi repo's history runs entirely within the
+period (first commit June 11, through the deadline): the orchestration is now an audited Burr state
+machine served over MCP by Theodosia (the earlier project was a GitLab Duo Workflow agent), and the
+whole Splunk layer is new, correlation through the official Splunk MCP Server, the AI Toolkit's
+`StateSpaceForecast` and `anomalydetection`, the verdict and the agent's own state-machine walk
+published back to Splunk over HEC, the local Granite driver and writer, the Granite Guardian
+groundedness auditor, and the remediation diff. The diff-to-load-test idea is shared; the agentic
+Splunk observability is new.
 
 **How to test it.** The repository is public and open source (Apache-2.0, license at the repo
 root). Two paths:
