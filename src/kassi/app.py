@@ -716,6 +716,13 @@ def _step_status(state: State, phase: str, ptools: list[dict], verdict: str) -> 
     return "ok"
 
 
+def _as_float(value: Any) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _verdict(state: State) -> str:
     if state["error"]:
         return f"failed: {state['error']}"
@@ -729,13 +736,16 @@ def _verdict(state: State) -> str:
             f"{wp['err_pct']}% 5xx, cause: {te['error_message']}"
         )
     # No errors, but Splunk's own ML flags the trend: a latency regression the error rate misses.
+    # Either the forecast projects p95 climbing past the current level, or anomalydetection fired.
     an = state["anomalies"] or {}
-    if an.get("available") and ((an.get("anomalous_buckets") or 0) or (an.get("forecast_breaches") or 0)):
+    fp, p95 = _as_float(an.get("forecast_p95_ms")), _as_float(findings.get("p95_ms"))
+    rising = fp is not None and p95 is not None and fp > 1.15 * p95
+    flagged = (an.get("anomalous_buckets") or 0) or (an.get("forecast_breaches") or 0)
+    if an.get("available") and (rising or flagged):
         path = (wp or {}).get("path") or "the changed endpoint"
         return (
             f"latency degradation: {path} p95 {findings.get('p95_ms')}ms with no errors; "
-            f"Splunk forecast p95 {an.get('forecast_p95_ms')}ms, "
-            f"{an.get('anomalous_buckets')} anomalous bucket(s)"
+            f"Splunk forecast p95 {an.get('forecast_p95_ms')}ms, {an.get('anomalous_buckets')} anomalous bucket(s)"
         )
     rr = state["run_result"]
     return "passed" if rr.get("success") else f"ran with failures (exit {rr.get('exit_code')})"

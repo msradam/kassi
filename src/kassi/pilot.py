@@ -128,13 +128,27 @@ async def drive_granite(
             {"role": "user", "content": f"{prompt}\n\nReachable actions now: {reachable}"},
         ]
 
+        nudges = 0
         for _ in range(max_turns):
             msg = await _ollama_chat(host, model, messages, tools, temperature, timeout)
             messages.append(msg)
             calls = msg.get("tool_calls") or []
             if not calls:
-                transcript["stopped_on"] = "text_only"
+                # The model answered with prose instead of a tool call. While the FSM still has
+                # legal moves, nudge it to continue rather than giving up mid-run (a small model
+                # occasionally stops driving); only fall through to terminal when truly stuck.
+                if reachable and nudges < 4:
+                    nudges += 1
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": f"Continue: call the step tool now with one of {reachable}.",
+                        }
+                    )
+                    continue
+                transcript["stopped_on"] = "terminal" if not reachable else "text_only"
                 break
+            nudges = 0
 
             for call in calls:
                 fn = call.get("function", {})
