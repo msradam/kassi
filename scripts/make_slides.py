@@ -63,8 +63,8 @@ SLIDES = [
         "accent": "Divines disaster, crafts the cure.",
         "body": [
             "An AI agent that load-tests a code change, finds the regression in Splunk,",
-            "and writes the fix. Driver, writer, and auditor all run on a local 8B model.",
-            "It uses the official Splunk MCP Server and the Splunk AI Toolkit at runtime.",
+            "and writes the fix. A model-agnostic state machine over MCP, driven by any",
+            "model down to a local 8B. Splunk MCP Server + AI Toolkit, live at runtime.",
         ],
     },
     {  # 2. WHY

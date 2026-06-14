@@ -15,9 +15,10 @@ Splunk MCP Server, and explains what the change did and *why*, root cause (`data
 locked`), cited evidence, an ML forecast of the trend, and the fix, then publishes the verdict
 back to a Splunk dashboard. A change goes in, an explained outcome comes out: agentic
 observability, every step sealed to a hash-chained, auditable ledger, so the prophecy comes
-with proof and it is safe to run unattended. The driver, the writer, and the auditor all run on
-a local 8B model, and the agent publishes its own state-machine walk back to Splunk, so it is
-observable in the very system it observes.
+with proof and it is safe to run unattended. The audited state machine over MCP keeps the whole
+loop model-agnostic, so it scales from a hosted frontier model down to a local 8B that runs the
+driver, writer, and auditor on one box; and the agent publishes its own state-machine walk back to
+Splunk, so it is observable in the very system it observes.
 
 **Track:** Observability (primary); also Platform & Developer Experience.
 **Bonus prizes targeted:** Best Use of Splunk MCP Server; Best Use of Splunk Developer Tools.
