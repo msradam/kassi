@@ -34,7 +34,7 @@ SEGMENTS = [
     (CLIPS / "clip-feed.mp4", "fit", 30),
     (CLIPS / "clip-audit-feed.mp4", "fit", 9),
     (CLIPS / "clip-dashboard-feed.mp4", "cap", 8),
-    (DECK / "slide-05.png", "hold", 9),  # scorecard
+    (DECK / "slide-05.png", "hold", 11),  # scorecard
     (DECK / "slide-06.png", "hold", 12),  # close
 ]
 
