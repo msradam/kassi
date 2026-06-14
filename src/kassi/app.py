@@ -710,6 +710,8 @@ def _step_status(state: State, phase: str, ptools: list[dict], verdict: str) -> 
         v = (verdict or "").lower()
         if "regression" in v:
             return "regression"
+        if "degradation" in v:
+            return "degrading"
         return "failed" if v.startswith(("failed", "no run")) else "ok"
     return "ok"
 
@@ -725,6 +727,15 @@ def _verdict(state: State) -> str:
         return (
             f"server-side regression: {wp['path']} p95 {wp['p95_ms']}ms, "
             f"{wp['err_pct']}% 5xx, cause: {te['error_message']}"
+        )
+    # No errors, but Splunk's own ML flags the trend: a latency regression the error rate misses.
+    an = state["anomalies"] or {}
+    if an.get("available") and ((an.get("anomalous_buckets") or 0) or (an.get("forecast_breaches") or 0)):
+        path = (wp or {}).get("path") or "the changed endpoint"
+        return (
+            f"latency degradation: {path} p95 {findings.get('p95_ms')}ms with no errors; "
+            f"Splunk forecast p95 {an.get('forecast_p95_ms')}ms, "
+            f"{an.get('anomalous_buckets')} anomalous bucket(s)"
         )
     rr = state["run_result"]
     return "passed" if rr.get("success") else f"ran with failures (exit {rr.get('exit_code')})"

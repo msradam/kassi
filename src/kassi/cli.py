@@ -30,7 +30,7 @@ def _outcome_color(stage: str) -> str:
     s = stage.lower()
     if any(k in s for k in ("regression", "fail", "ungrounded", "error", "no run")):
         return _MAGENTA
-    if any(k in s for k in ("degraded", "timeout", "repaired", "refused")):
+    if any(k in s for k in ("degrad", "timeout", "repaired", "refused")):
         return _YELLOW
     return _GREEN
 
@@ -140,11 +140,12 @@ def main() -> int:
                 )
             elif action == "report":
                 v = (st.get("verdict") or "").lower()
-                status = (
-                    "regression"
-                    if "regression" in v
-                    else ("failed" if v.startswith(("failed", "no run")) else "passed")
-                )
+                if "regression" in v:
+                    status = "regression"
+                elif "degradation" in v:
+                    status = "degrading"
+                else:
+                    status = "failed" if v.startswith(("failed", "no run")) else "passed"
             else:
                 status = st.get("stage") or "ok"
             col = _outcome_color(status)
