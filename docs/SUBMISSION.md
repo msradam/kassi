@@ -252,3 +252,54 @@ forecast, a regression the error rate would miss entirely.
 - Grow synthetic load generation: schema-aware request synthesis, realistic traffic mixes
   and ramps, and seeded fault scenarios so a single intent produces a richer, more
   representative test rather than a static replay.
+
+## Additional information
+
+Answers to the submission form, stated plainly so a judge can check each one against the repo.
+
+**Track.** Observability. kassi helps an engineering team understand how a change behaves under
+load, detect the regression in server-side telemetry before production, and automate the response
+(a cited diagnosis plus a proposed fix). It also touches Platform & Developer Experience, since it
+slots into the SDLC at the pull request, but Observability is the primary track.
+
+**Splunk AI capabilities used at runtime.** Two, both called live against Splunk Enterprise
+10.4.0, neither mocked:
+
+- **Splunk MCP Server** (Splunkbase 7931, v1.2.0), the primary integration. The agent reads all
+  server-side telemetry through it: `splunk_get_info`, `splunk_get_index_info`, and
+  `splunk_get_metadata` to preflight the index, then `splunk_run_query` for the four correlation
+  queries and the anomaly scan. It connects over the official `mcp-remote` stdio bridge with an
+  encrypted Bearer token. This is the integration entered for **Best Use of Splunk MCP Server**.
+- **Splunk AI Toolkit**, invoked through that same `splunk_run_query` tool. The `StateSpaceForecast`
+  algorithm forecasts the latency band in `detect_anomalies` (core `predict` is the automatic
+  fallback when the toolkit's Python for Scientific Computing add-on is absent), and
+  `anomalydetection` flags statistically outlying buckets. Splunk's own ML locates the saturation
+  onset, and the forecast band and flagged buckets fold into the verdict, so a zero-error latency
+  change still reads as "degrading."
+
+To not overstate anything: kassi does **not** use Splunk Hosted Models, the Splunk AI Assistant for
+SPL (it composes its SPL in pure Python by design, and the model never writes SPL), or the
+AI-for-Splunk-Apps Python SDK. The reasoning models in the loop (writer, auditor, driver) are a
+local IBM Granite 4.1 family on Ollama, not Splunk-hosted. A Splunk-hosted root-cause narrative and
+AI-Assistant SPL generation are listed under "What's next," not claimed here.
+
+**Bonus prizes.** Primary is **Best Use of Splunk MCP Server**: the whole observability correlation
+is orchestrated through it. The project also builds on the Splunk developer ecosystem (the MCP
+Server and AI Toolkit apps from Splunkbase / dev.splunk.com), the basis for a **Best Use of Splunk
+Developer Tools** consideration; it does not use App Inspect or the Splunk SDK, so that is the
+lighter of the two claims.
+
+**New or significantly updated.** New. kassi was built from scratch during the submission period
+for this hackathon; there is no pre-existing project being repackaged.
+
+**How to test it.** The repository is public and open source (Apache-2.0, license at the repo
+root). Two paths:
+
+- **Offline, no setup:** `uv sync && uv run pytest` runs the full FSM suite against Theodosia's
+  `FakeUpstream` for both MCP servers and a fake model, exercising the state machine, the refusals,
+  and the audit ledger with no k6, Splunk, Ollama, or network.
+- **Full live run:** `docs/SPLUNK_SETUP.md` walks through a local Splunk Enterprise install,
+  seeding sample telemetry, and the official Splunk MCP Server; then `scripts/verify_petclinic.py`
+  drives the entire FSM end to end with nothing canned (real app, real k6, live Splunk). The README
+  "Case study" shows the expected output, and `kassi verify <app-id>` confirms the run's ledger was
+  not tampered with.

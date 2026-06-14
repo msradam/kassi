@@ -4,9 +4,11 @@
 
 > Divines disaster, crafts the cure.
 
-Closed-loop observability, driven by change. Most production outages are self-inflicted by a
-change, and the warning usually exists but can't be proven before it ships. kassi closes that
-loop: point it at a code change (a git diff) or a plain-language intent, and it exercises the
+Closed-loop observability, driven by change. Roughly 80% of production outages are
+self-inflicted: Gartner attributes unplanned downtime to people and process, not technology, and
+change is the single biggest cause. The warning usually exists but can't be proven before it
+ships. kassi closes that loop: point it at a code change (a git diff) or a plain-language intent,
+and it exercises the
 affected endpoints (real traffic through the Grafana k6 MCP server), reads the target's
 **server-side telemetry from Splunk** over the exact window, and explains what the change did
 and *why*, a **cited root-cause analysis** (evidence and a fix), an ML forecast of the trend,
