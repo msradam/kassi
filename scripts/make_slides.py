@@ -79,6 +79,7 @@ SLIDES = [
             "An AI agent that load-tests a code change,",
             "finds the regression in Splunk, writes the fix.",
         ],
+        "byline": "Adam M. Rahman    ·    June 2026",
     },
     {  # 2. WHY
         "kicker": "THE PROBLEM",
@@ -155,6 +156,8 @@ def render(slide: dict, index: int, total: int) -> Image.Image:
     for line in slide.get("body", []):
         d.text((x, y), line, font=body_font, fill=GRAY)
         y += 64 * s
+    if slide.get("byline"):
+        d.text((x, y + 26 * s), slide["byline"], font=font("mono", 30 * s), fill=DIM)
 
     d.text(
         (x, H - 130 * s),
