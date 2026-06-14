@@ -19,28 +19,32 @@ DECK = ROOT / "docs" / "deck"
 CLIPS = ROOT / "docs" / "clips"
 OUT = CLIPS / "kassi-demo-full.mp4"
 
-# (source, hold-seconds) — hold is None for clips (use their own length)
+# (source, seconds): for a .png it is the hold; for a clip it is a hard cap (None = full length).
+# Per scenario: terminal (Granite drives) -> audit (the JSONL ledger + verify) -> dashboard.
+# Terminals and audits play full; dashboards are capped (the walk is already shown in the audit).
 SEGMENTS = [
-    (DECK / "slide-01.png", 5),
-    (DECK / "slide-02.png", 5),
-    (DECK / "slide-03.png", 5),
-    (DECK / "slide-04.png", 4),
+    (DECK / "slide-01.png", 3),
+    (DECK / "slide-02.png", 4),
+    (DECK / "slide-03.png", 4),
     (CLIPS / "clip-petclinic.mp4", None),
-    (CLIPS / "clip-dashboard-petclinic.mp4", None),
+    (CLIPS / "clip-audit-petclinic.mp4", None),
+    (CLIPS / "clip-dashboard-petclinic.mp4", 16),
     (CLIPS / "clip-feed.mp4", None),
-    (CLIPS / "clip-dashboard-feed.mp4", None),
-    (DECK / "slide-05.png", 5),
+    (CLIPS / "clip-audit-feed.mp4", None),
+    (CLIPS / "clip-dashboard-feed.mp4", 16),
+    (DECK / "slide-05.png", 4),
 ]
 
 _VF = "scale=1920:1080,setsar=1,format=yuv420p"
 _ENC = ["-r", "60", "-vf", _VF, "-c:v", "libx264", "-preset", "medium", "-crf", "18", "-pix_fmt", "yuv420p"]
 
 
-def _normalize(src: Path, hold: int | None, dst: Path) -> None:
-    if hold is not None:  # still image -> held clip
-        cmd = ["ffmpeg", "-y", "-loop", "1", "-t", str(hold), "-i", str(src), *_ENC, "-an", str(dst)]
-    else:
-        cmd = ["ffmpeg", "-y", "-i", str(src), *_ENC, "-an", str(dst)]
+def _normalize(src: Path, secs: int | None, dst: Path) -> None:
+    if src.suffix == ".png":  # still image held for `secs`
+        cmd = ["ffmpeg", "-y", "-loop", "1", "-t", str(secs), "-i", str(src), *_ENC, "-an", str(dst)]
+    else:  # clip, optionally capped at `secs`
+        cap = ["-t", str(secs)] if secs is not None else []
+        cmd = ["ffmpeg", "-y", "-i", str(src), *cap, *_ENC, "-an", str(dst)]
     subprocess.run(cmd, check=True, capture_output=True)
 
 

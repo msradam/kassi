@@ -63,8 +63,8 @@ SLIDES = [
         "accent": "Divines disaster, crafts the cure.",
         "body": [
             "An AI agent that load-tests a code change, finds the regression in Splunk,",
-            "and writes the fix — driver, writer, and auditor all on a local 8B model.",
-            "Live at runtime: the official Splunk MCP Server + the Splunk AI Toolkit.",
+            "and writes the fix. Driver, writer, and auditor all run on a local 8B model.",
+            "It uses the official Splunk MCP Server and the Splunk AI Toolkit at runtime.",
         ],
     },
     {  # 2. WHY
@@ -75,8 +75,8 @@ SLIDES = [
             "The warning is usually there. It just isn't believed.",
             "",
             "A change's real impact only surfaces in server-side telemetry, after something",
-            "exercises it — and nobody generates traffic and correlates it with Splunk by hand",
-            "before shipping. So it almost never happens, and the change takes down prod at 2am.",
+            "exercises it, and nobody generates traffic and correlates it with Splunk by hand",
+            "before shipping. So it almost never happens, and prod goes down at 2am.",
         ],
         "accent": "kassi makes the warning undeniable.",
     },
@@ -97,7 +97,7 @@ SLIDES = [
         "kicker": "LIVE  ·  NOTHING CANNED",
         "title": "Watch it run.",
         "accent": "Real app, real k6, the official Splunk MCP Server, a local model.",
-        "body": ["Two changes, two different failure signatures — same agent, same dashboard."],
+        "body": ["Two changes, two different failure signatures. Same agent, same dashboard."],
     },
     {  # 5. THANK YOU
         "kicker": "SPLUNK AGENTIC OPS HACKATHON  ·  OBSERVABILITY",
