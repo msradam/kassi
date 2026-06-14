@@ -30,11 +30,12 @@ SEGMENTS = [
     (DECK / "slide-03.png", "hold", 16),
     (CLIPS / "clip-petclinic.mp4", "fit", 32),
     (CLIPS / "clip-audit-petclinic.mp4", "fit", 10),
-    (CLIPS / "clip-dashboard-petclinic.mp4", "cap", 16),
+    (CLIPS / "clip-dashboard-petclinic.mp4", "cap", 12),
     (CLIPS / "clip-feed.mp4", "fit", 30),
     (CLIPS / "clip-audit-feed.mp4", "fit", 9),
-    (CLIPS / "clip-dashboard-feed.mp4", "cap", 11),
-    (DECK / "slide-05.png", "hold", 12),
+    (CLIPS / "clip-dashboard-feed.mp4", "cap", 8),
+    (DECK / "slide-05.png", "hold", 9),  # scorecard
+    (DECK / "slide-06.png", "hold", 12),  # close
 ]
 
 _VF = "scale=1920:1080,setsar=1,format=yuv420p"
