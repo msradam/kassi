@@ -39,10 +39,9 @@ Built for the Splunk Agentic Ops Hackathon (Observability track). See
 
 ![kassi driving the FSM and correlating k6 results with Splunk telemetry](docs/demo.gif)
 
-The demo above is recorded from [`docs/demo.tape`](docs/demo.tape) with
-[vhs](https://github.com/charmbracelet/vhs): it prints the state machine, then drives the
-whole workflow end-to-end (script + analysis from the configured model, k6 docs + run,
-Splunk preflight and correlation) against a live Splunk.
+The demo above is a recorded end-to-end run: it prints the state machine, then drives the
+whole workflow (script + analysis from the configured model, k6 docs + run, Splunk preflight
+and correlation) against a live Splunk.
 
 ### Screenshots
 
