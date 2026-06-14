@@ -4,8 +4,9 @@
 > the fix, a remediation diff, before production ever sees it. Cassandra foresaw disaster and
 > was never believed; kassi's prophecy comes with proof, and a patch.
 
-**Elevator pitch.** Roughly 80% of production outages are self-inflicted, they trace back to a
-change. The warning is usually there; it just isn't believed, because a change's real impact
+**Elevator pitch.** Roughly 80% of production outages are self-inflicted: Gartner attributes
+unplanned downtime to people and process rather than technology, and change is the single biggest
+cause. The warning is usually there; it just isn't believed, because a change's real impact
 only surfaces in server-side telemetry after something exercises the system, and nobody
 generates traffic and correlates it with Splunk by hand before shipping. kassi closes that loop
 autonomously. Point it at a code change and it exercises the affected endpoints through the
@@ -27,7 +28,8 @@ and `docs/SPLUNK_SETUP.md`. Built new during the submission period for this hack
 
 ## Inspiration
 
-Roughly 80% of production outages are self-inflicted, they trace back to a change, which is
+Roughly 80% of production outages are self-inflicted: Gartner attributes unplanned downtime to
+people and process rather than technology, and change is the single biggest cause, which is
 why "change failure rate" is one of the four DORA metrics teams are measured on. And every
 engineer has been Cassandra about a change: you sensed it was risky, you couldn't prove it, it
 shipped, and it took down prod at 2am. The warning existed; it just wasn't believed. The reason
