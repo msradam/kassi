@@ -1,10 +1,12 @@
 [project]
 name = "kassi"
 version = "0.1.0"
-description = "Divinate your stack's performance: a diff/intent-driven load-test + Splunk observability agent on Burr + Theodosia."
+description = "An AI agent that load-tests a code change, finds the regression in Splunk, and writes the fix; driver, writer, and auditor all on a local model."
 authors = [
     { name = "Adam Munawar Rahman", email = "msrahmanadam@gmail.com" }
 ]
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 requires-python = ">=3.12"
 dependencies = [
     "httpx>=0.28.1",
