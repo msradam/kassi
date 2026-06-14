@@ -31,7 +31,7 @@ SEGMENTS = [
     (CLIPS / "clip-petclinic.mp4", "fit", 32),
     (CLIPS / "clip-audit-petclinic.mp4", "fit", 10),
     (CLIPS / "clip-dashboard-petclinic.mp4", "cap", 16),
-    (CLIPS / "clip-feed.mp4", "fit", 26),
+    (CLIPS / "clip-feed.mp4", "fit", 30),
     (CLIPS / "clip-audit-feed.mp4", "fit", 9),
     (CLIPS / "clip-dashboard-feed.mp4", "cap", 11),
     (DECK / "slide-05.png", "hold", 12),
