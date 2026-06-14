@@ -410,6 +410,11 @@ def parse_validation(payload: Any) -> str | None:
     the fix loop has something to act on instead of a bare exit code."""
     if not isinstance(payload, dict):
         return f"unexpected validate_script response: {payload!r:.200}"
+    # exit 99 means k6 ran the script but crossed a threshold: a runtime SLO breach (exactly what we
+    # load-test to surface), not an invalid script. Accept it so it is measured by run_test, rather
+    # than routed to the fix loop, which can only repair script syntax and would needlessly give up.
+    if payload.get("exit_code") == 99:
+        return None
     if payload.get("valid") is True and payload.get("exit_code") in (0, None):
         return None
 

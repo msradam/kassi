@@ -725,7 +725,7 @@ def _as_float(value: Any) -> float | None:
         return None
 
 
-_LATENCY_FLOOR_MS = 25.0  # below this, a flagged bucket is treated as jitter, not a degradation
+_LATENCY_FLOOR_MS = 40.0  # below this p95/forecast, a flagged bucket is jitter, not a degradation
 
 
 def _verdict(state: State) -> str:
@@ -758,10 +758,11 @@ def _verdict(state: State) -> str:
     fp, p95 = _as_float(an.get("forecast_p95_ms")), _as_float(findings.get("p95_ms"))
     rising = fp is not None and p95 is not None and fp > 1.15 * p95
     flagged = (an.get("anomalous_buckets") or 0) or (an.get("forecast_breaches") or 0)
-    # ...but only when p95 is actually slow. anomalydetection still annotates the odd bucket on a
-    # healthy fast endpoint's sub-10ms jitter; the floor keeps a single noise bucket from crying
-    # wolf (the benchmark's healthy controls otherwise read as degradation).
-    slow = p95 is not None and p95 >= _LATENCY_FLOOR_MS
+    # ...but only when latency is actually meaningful. anomalydetection annotates the odd bucket
+    # even on a healthy endpoint's sub-floor jitter (worse behind a gateway that adds ~20ms), so a
+    # lone bucket near the floor otherwise cries wolf. Count the forecast too: a trend heading above
+    # the floor is a real degradation even if the window's measured p95 has not crossed it yet.
+    slow = (p95 is not None and p95 >= _LATENCY_FLOOR_MS) or (fp is not None and fp >= _LATENCY_FLOOR_MS)
     if an.get("available") and slow and (rising or flagged):
         path = (wp or {}).get("path") or "the changed endpoint"
         return (

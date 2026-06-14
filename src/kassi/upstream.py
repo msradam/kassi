@@ -95,7 +95,8 @@ def splunk_upstream_config() -> dict[str, Any] | None:
     command = os.environ.get("KASSI_SPLUNK_MCP_CMD", "npx")
     config: dict[str, Any] = {
         "command": command,
-        "args": ["-y", "mcp-remote", endpoint, "--header", f"Authorization: Bearer {token}"],
+        # Pin mcp-remote: newer releases negotiate a transport the Splunk MCP Server rejects (405).
+        "args": ["-y", "mcp-remote@0.1.38", endpoint, "--header", f"Authorization: Bearer {token}"],
     }
     if os.environ.get("KASSI_SPLUNK_INSECURE"):
         # Local Splunk's management port uses a self-signed cert; tell mcp-remote's
