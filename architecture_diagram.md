@@ -72,45 +72,66 @@ flowchart TB
     RP -.->|HEC: run summary + per-phase step trace| RUNIDX
 ```
 
-## System diagram (ASCII)
+## System diagram (text)
+
+Two views of the same architecture. First, how a run is driven and governed:
 
 ```
-  AI agent (driver): local Granite (kassi pilot) / Claude Code / any MCP client
-  sees exactly ONE tool ─────────────────────────────────────────┐
-                                                   step(action, inputs)
-                                                                  │
-  ┌───────────────────────────────────────────────────────────── ▼ ──────────┐
-  │  kassi - Burr FSM served over MCP by Theodosia                            │
-  │                                                                          │
-  │   select_mode → read_diff / parse_intent → doc_lookup → scaffold         │
-  │        → generate_script → validate_script ⇄ fix_script  (bounded loop)  │
-  │        → run_test → splunk_preflight → correlate → detect_anomalies      │
-  │        → analyze (writer) → screen (auditor) → report                    │
-  │                                                                          │
-  │   every step + every refusal ──▶ immutable hash-chained ledger           │
-  └──┬─────────────────┬──────────────────────────┬──────────────────────────┘
-     │ HTTP            │ MCP call_upstream         │ MCP call_upstream
-     ▼                 ▼                           ▼
- ┌──────────────┐ ┌────────────────────┐ ┌────────────────────────────────┐
- │ models       │ │ Grafana k6 MCP     │ │ Splunk MCP Server  (Splunk AI) │
- │ Granite 4.1  │ │ generate_script    │ │ splunk_run_query · get_info ·  │
- │ writer +     │ │ prompt · docs ·    │ │ get_index_info · get_metadata ·│
- │ Guardian 4.1 │ │ best_practices ·   │ │ StateSpaceForecast ·           │
- │ auditor      │ │ validate · run     │ │ anomalydetection (token-auth)  │
- │ (local)      │ └─────────┬──────────┘ └───────────────┬────────────────┘
- └──────────────┘           │ generated k6 load          │ windowed SPL
-                            ▼                            ▼
-                    ┌──────────────┐    logs/    ┌────────────────────┐
-                    │ target app   │───metrics──▶│ Splunk Enterprise  │
-                    │ (HTTP API)   │             │ indexed telemetry  │
-                    └──────────────┘             └────────────────────┘
-
-  Flow: driver drives the FSM by name → kassi hides both upstream MCP servers →
-  k6 drives load at the target → the target's telemetry lands in Splunk →
-  kassi reads it back over the exact test window via the Splunk MCP Server →
-  the writer model explains it, a second model audits the explanation →
-  kassi returns the verdict and publishes the run plus its own step trace to Splunk.
+                                       ┌─────────────────────────────────────────────────┐
+                                       │                how a run starts:                │
+                                       │ driver (kassi pilot / Claude Code / MCP client) │
+                                       │         or kassi watch (diff-triggered)         │
+                                       └─────────────────────────────────────────────────┘
+                                         │
+                                         │ step / diff
+                                         ▼
+┌─────────────────────────────┐        ┌─────────────────────────────────────────────────┐
+│   writer + auditor model    │  LLM   │      kassi: Burr FSM over MCP (Theodosia)       │
+│ (pluggable: 8B or frontier) │ ◀───── │           driver sees ONE tool: step            │
+└─────────────────────────────┘        └─────────────────────────────────────────────────┘
+                                         │
+                                         │ records
+                                         ▼
+                                       ┌─────────────────────────────────────────────────┐
+                                       │               hash-chained ledger               │
+                                       │             (every step + refusal)              │
+                                       └─────────────────────────────────────────────────┘
 ```
+
+Then the load-and-telemetry loop kassi orchestrates between the two MCP servers,
+reading the target's server-side truth back from Splunk over the exact test window:
+
+```
+             ┌───────────────────────┐
+  ┌────────▶ │ kassi (orchestrator)  │ ─┐
+  │          └───────────────────────┘  │
+  │            │                        │
+  │            │ call_upstream          │
+  │            ▼                        │
+  │          ┌───────────────────────┐  │
+  │          │    Grafana k6 MCP     │  │
+  │          └───────────────────────┘  │
+  │            │                        │
+  │            │ k6 load                │ HEC: run + steps
+  │            ▼                        │
+  │          ┌───────────────────────┐  │
+  │ findings │ target app (HTTP API) │  │
+  │          └───────────────────────┘  │
+  │            │                        │
+  │            │ telemetry              │
+  │            ▼                        │
+  │          ┌───────────────────────┐  │
+  │          │   Splunk Enterprise   │ ◀┘
+  │          └───────────────────────┘
+  │            │
+  │            │ windowed SPL
+  │            ▼
+  │          ┌───────────────────────┐
+  └───────── │   Splunk MCP Server   │
+             └───────────────────────┘
+```
+
+The FSM phases run in order: `select_mode -> read_diff / parse_intent -> doc_lookup -> scaffold -> generate_script -> validate_script <-> fix_script -> run_test -> splunk_preflight -> correlate -> detect_anomalies -> analyze (writer) -> screen (auditor) -> report`. The driver hides both upstream MCP servers. k6 drives load at the target, the target's telemetry lands in Splunk, and kassi reads it back through the Splunk MCP Server, has the writer model explain it and a second model audit the explanation, then returns the verdict and publishes the run plus its own step trace to Splunk.
 
 ## How the application interacts with Splunk
 
