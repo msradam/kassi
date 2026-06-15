@@ -8,18 +8,21 @@ rest come from theodosia. Sessions are stored under ``~/.kassi``.
 from __future__ import annotations
 
 import asyncio
+import re
 import subprocess
+import time
 from pathlib import Path
 
 import typer
 from dotenv import load_dotenv
-from theodosia import mount
+from theodosia import UpstreamManager, bind_upstream, mount
 from theodosia.cli import build_cli, run
+from theodosia.upstream import reset_upstream
 
 from kassi import arcana
 from kassi.app import build_application
 from kassi.pilot import drive_granite
-from kassi.upstream import k6_warm_command, upstream
+from kassi.upstream import k6_upstream_config, k6_warm_command, splunk_upstream_config, upstream
 
 # ANSI palette for the pilot stream, keyed to kassi's magenta cover scheme.
 _MAGENTA, _CYAN, _GREEN, _YELLOW = "\033[38;5;205m", "\033[38;5;80m", "\033[38;5;78m", "\033[38;5;179m"
@@ -98,6 +101,52 @@ def _phase_detail(action: str, st: dict) -> tuple[str, str]:
     elif action == "report":
         facts = "published to Splunk, sealed to the ledger"
     return tools, facts
+
+
+_ROUTE_CHANGE = re.compile(r"^[+-]\s*@(?:app|router)\.(?:get|post|put|patch|delete)\(", re.MULTILINE)
+
+
+def _git(repo: str, *args: str) -> str:
+    out = subprocess.run(["git", "-C", repo, *args], capture_output=True, text=True)
+    return out.stdout.strip()
+
+
+def _diff_touches_endpoint(diff: str) -> bool:
+    """True when the diff adds or removes an HTTP route decorator (an API-surface change)."""
+    return bool(_ROUTE_CHANGE.search(diff or ""))
+
+
+async def _diagnose_diff(repo: str, ref: str, target_base_url: str, splunk_index: str) -> None:
+    """Drive the whole workflow once, in diff mode, and print the verdict + proposed fix."""
+    servers: dict = {"k6": k6_upstream_config()}
+    splunk = splunk_upstream_config()
+    if splunk is not None:
+        servers["splunk"] = splunk
+    upstream_mgr = UpstreamManager(servers)
+    token = bind_upstream(upstream_mgr)
+    try:
+        _, _, state = await build_application().arun(
+            halt_after=["report"],
+            inputs={
+                "repo_path": repo,
+                "ref": ref,
+                "target_base_url": target_base_url,
+                "splunk_index": splunk_index,
+            },
+        )
+    finally:
+        await upstream_mgr.aclose()
+        reset_upstream(token)
+    report = (state or {}).get("report") or {}
+    verdict = report.get("verdict")
+    if verdict:
+        print(f"{arcana.SIGIL}  {_BOLD}verdict:{_RESET} {_outcome_color(verdict)}{verdict}{_RESET}")
+    remediation = report.get("remediation")
+    if remediation:
+        print(
+            f"\n{_BOLD}{arcana.SIGIL}  proposed fix{_RESET} {_DIM}(validated diff, review before merging){_RESET}"
+        )
+        print(_color_diff(remediation))
 
 
 def main() -> int:
@@ -224,6 +273,53 @@ def main() -> int:
         else:
             print(f"k6 warm-up exited {result.returncode}:\n{result.stderr.strip()}")
             raise SystemExit(result.returncode)
+
+    @cli.command("watch")
+    def watch(
+        repo_path: str = typer.Option(".", help="git repo to guard"),
+        target_base_url: str = typer.Option("http://localhost:8000", help="target service base URL"),
+        splunk_index: str = typer.Option("main", help="index holding the target's telemetry"),
+        interval: float = typer.Option(10.0, help="seconds between git-HEAD polls"),
+        once: bool = typer.Option(False, help="diagnose the current HEAD once, then exit"),
+    ) -> None:
+        """Run kassi in the background, triggered on diff detection.
+
+        Polls the repo's git HEAD; when a new commit lands that changes an HTTP endpoint, kassi
+        drives the whole workflow in diff mode against that change (real k6 load correlated with
+        Splunk telemetry), prints the verdict and a proposed fix, and publishes the run to Splunk.
+        A change comes in, a verdict goes out, hands-free: the regression is caught the moment it is
+        committed, not at 2am. Point it at a repo and forget it, or drop it in a post-commit hook.
+        """
+        repo = str(Path(repo_path).resolve())
+        head = _git(repo, "rev-parse", "HEAD")
+        if not head:
+            print(f"{repo} is not a git repository.")
+            raise SystemExit(1)
+        print(
+            f"{_BOLD}{_MAGENTA}{arcana.SIGIL}  kassi is watching{_RESET} {_CYAN}{repo}{_RESET} "
+            f"{_DIM}· diff-triggered, polling every {interval:g}s{_RESET}\n"
+        )
+        last = "" if once else head
+        try:
+            while True:
+                head = _git(repo, "rev-parse", "HEAD")
+                if once or (head and head != last):
+                    short = head[:8]
+                    diff = _git(repo, "diff", "HEAD~1", "HEAD")
+                    if _diff_touches_endpoint(diff):
+                        print(
+                            f"{arcana.SIGIL}  {_BOLD}change at {short}{_RESET} touches an endpoint, diagnosing...\n"
+                        )
+                        asyncio.run(_diagnose_diff(repo, "HEAD~1", target_base_url, splunk_index))
+                        print()
+                    else:
+                        print(f"{_DIM}{arcana.SIGIL}  {short}: no endpoint change, skipping{_RESET}")
+                    last = head
+                    if once:
+                        break
+                time.sleep(interval)
+        except KeyboardInterrupt:
+            print(f"\n{_DIM}{arcana.SIGIL}  kassi stopped watching.{_RESET}")
 
     return run(cli)
 
