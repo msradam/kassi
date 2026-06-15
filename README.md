@@ -6,20 +6,20 @@
 
 Closed-loop observability, driven by change. Roughly 80% of production outages are
 self-inflicted: Gartner attributes unplanned downtime to people and process, not technology, and
-change is the single biggest cause. The warning usually exists but can't be proven before it
-ships. kassi closes that loop: point it at a code change (a git diff) or a plain-language intent,
-and it exercises the
-affected endpoints (real traffic through the Grafana k6 MCP server), reads the target's
-**server-side telemetry from Splunk** over the exact window, and explains what the change did
-and *why*, a **cited root-cause analysis** (evidence and a fix), an ML forecast of the trend,
-and a **proposed remediation diff** that fixes the root cause, plus a verdict published back to
-a Splunk dashboard. A change comes in, a change that fixes it goes out, every step sealed to an
-auditable, hash-chained ledger, so the prophecy comes with proof and a patch. (Named for
-Kassandra, who foresaw what others would not believe.)
+change is the single biggest cause. The warning usually exists, but you can't prove it before the
+change ships.
 
-Named for the seer who saw what others would not believe, kassi reads a change and
-foretells how it behaves under load. The workflow is themed as a tarot draw: the agent
-turns one card of the Major Arcana per phase (`kassi arcana` lays out the full spread).
+kassi closes that loop. Point it at a code change (a git diff) or a plain-language intent, and it
+load-tests the affected endpoints with real traffic through the Grafana k6 MCP server, reads the
+target's server-side telemetry back from Splunk over the exact window, and explains what the change
+did and why. You get a cited root-cause analysis with the evidence, an ML forecast of the trend, a
+remediation diff that fixes the cause, and a verdict published to a Splunk dashboard. A change comes
+in, a change that fixes it goes out, every step sealed to an auditable, hash-chained ledger, so the
+prophecy comes with proof and a patch.
+
+kassi is named for Kassandra, who foresaw what others would not believe. It reads a change and
+foretells how it behaves under load. The workflow is themed as a tarot draw: the agent turns one
+card of the Major Arcana per phase (`kassi arcana` lays out the full spread).
 
 kassi is a [Burr](https://github.com/apache/burr) state machine served over MCP by
 [Theodosia](https://msradam.github.io/theodosia/). An agent drives the workflow one
