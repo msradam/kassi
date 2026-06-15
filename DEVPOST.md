@@ -9,14 +9,14 @@ observes.
 Named for Kassandra, who foresaw disaster and was never believed. kassi's prophecy comes with
 proof, and a patch.
 
-**Built on Theodosia, a framework I wrote.** kassi is not a script. It is an application on
+**Built on Theodosia, a framework I wrote.** kassi is an application on
 [Theodosia](https://msradam.github.io/theodosia/), my open-source (Apache-2.0) framework for
-serving a [Burr](https://github.com/apache/burr) state machine as a *governed* MCP server.
+serving a [Burr](https://github.com/apache/burr) state machine as a governed MCP server.
 Theodosia gives the driving agent one constant tool surface (it sees a single `step` tool, no
 matter how complex the workflow), hides the upstream MCP servers behind a single `call_upstream`,
 and writes every move and every refusal to an immutable, hash-chained ledger that `kassi verify`
-proves untampered. The framework is what makes the agent's autonomy auditable and safe by
-construction. kassi is the application that proves it out, end to end, on a real ops problem.
+proves untampered. That is what makes the agent auditable and safe to leave running unattended.
+kassi puts it to work on a real ops problem, end to end.
 
 > **Track:** Observability &nbsp;·&nbsp; **Repo:** open source, Apache-2.0 &nbsp;·&nbsp;
 > Full detail in the [README](README.md).
@@ -25,20 +25,21 @@ construction. kassi is the application that proves it out, end to end, on a real
 
 ## The one-minute version
 
-- **It uses Splunk AI for real, never simulated.** Every run calls the official Splunk MCP
-  Server and the Splunk AI Toolkit against a live Splunk Enterprise 10.4.0. This is the single
-  biggest disqualifier in the brief, and kassi has none of it.
-- **It closes the loop both ways.** Most tools tell you something broke. kassi runs the real
+- **Live Splunk AI, never simulated.** Every run calls the official Splunk MCP Server and the
+  Splunk AI Toolkit against a live Splunk Enterprise 10.4.0. That is the single biggest
+  disqualifier in the brief, and kassi has none of it.
+- **Closes the loop both ways.** Most tools tell you something broke. kassi runs the real
   experiment, explains *why*, and hands back a fix: a minimal unified diff that applies cleanly.
-- **It runs hands-free.** `kassi watch` guards a repo and runs the whole workflow the moment a
+- **Runs hands-free.** `kassi watch` guards a repo and runs the whole workflow the moment a
   commit changes an endpoint, so the regression is caught at commit time, not at 2am.
-- **It is built on my own framework.** Theodosia serves the workflow as a governed MCP server:
-  one constant tool surface, hidden upstreams, and a hash-chained ledger that refuses illegal
-  steps and `kassi verify` can prove. Autonomy that is auditable by construction.
-- **It is model-agnostic.** The same harness runs the entire loop on a local open 8B (on-prem,
+- **Built on my own framework.** Theodosia serves the workflow as a governed MCP server: one
+  constant tool surface, hidden upstreams, and a hash-chained ledger that refuses illegal steps
+  and `kassi verify` can prove.
+- **Model-agnostic.** The same harness runs the entire loop on a local open 8B (on-prem,
   air-gapped) or on a frontier model, unchanged.
-- **It is measured.** 0% false alarms on a live ground-truth benchmark; root cause in the top 3
-  **100%** of the time on a recognized academic RCA benchmark; 15/15 on a third-party app.
+- **Measured, not just demoed.** 0% false alarms on a live ground-truth benchmark, root cause in
+  the top 3 **100%** of the time on a recognized academic RCA benchmark, and 15/15 on a
+  third-party app.
 
 ---
 
@@ -112,8 +113,8 @@ otherwise reinvent:
   audit trail. `kassi verify` proves it was not tampered with, which is what makes the agent safe
   to leave running unattended on ops infrastructure.
 
-kassi is the application; Theodosia is the substrate. The same framework would mount any other
-Burr workflow as an equally governed, equally auditable agent.
+Theodosia would mount any other Burr workflow the same way, with the same governed surface and
+the same audit trail. kassi is the first application built on it.
 
 **Deterministic where it counts, model where it helps.** The model never writes SPL; pure Python
 composes the correlation queries. A deterministic scaffold always produces a runnable k6 baseline,
@@ -141,7 +142,7 @@ up to a frontier model unchanged. The design scales *with* the model; it does no
 **The agent is observable in Splunk, not just its results.** After each run, kassi publishes its
 own execution back to Splunk over HEC: one event per state-machine phase, keyed by the run id. A
 dashboard renders the agent's walk next to the client-and-server join, so an operator sees not
-just what the change did but how the agent reached the verdict. Agentic ops, taken literally.
+just what the change did but how the agent reached the verdict.
 
 ## Challenges we ran into
 
@@ -152,7 +153,7 @@ just what the change did but how the agent reached the verdict. Agentic ops, tak
   to it.
 - Nothing in an autonomous agent can be allowed to hang. A model-authored k6 script can wedge the
   runner, so every blocking upstream call is bounded by a timeout that falls back to the
-  deterministic scaffold. The pipeline degrades, it never stalls.
+  deterministic scaffold, so the pipeline degrades gracefully instead of stalling.
 - Wiring the official Splunk MCP Server over its streamable-HTTP transport, with an encrypted
   token and a self-signed certificate, through the `mcp-remote` bridge.
 
