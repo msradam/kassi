@@ -76,9 +76,9 @@ Give kassi a code change (a git diff) or a plain-language intent, and it:
    Splunk**.
 
 **A real run, nothing canned.** Pointed at a diff that adds `POST /api/visits`, one agent
-orchestrated the full walk across both MCP servers. It drove real k6 load (1448 requests, 26%
+orchestrated the full walk across both MCP servers. It drove real k6 load (2937 requests, 59.4%
 failed), read the server-side telemetry back from Splunk, and returned: *server-side regression,
-`/api/visits`, p95 309ms, 25.6% 5xx, cause `database is locked`*, with the AI Toolkit forecasting
+`/api/visits`, p95 318ms, 59.4% 5xx, cause `database is locked`*, with the AI Toolkit forecasting
 the latency band and flagging the anomalous bucket. Then it wrote the fix: move the write out of
 the held lock, enable WAL, raise the busy timeout. The proposed diff is not a guess; the model
 emits structured edits, kassi applies them, re-parses to confirm the file still compiles, and
@@ -175,7 +175,8 @@ We did not want to claim kassi "correlates problems" on the strength of a demo, 
 - **kassi-bench** (live k6 to Splunk, our apps): 80 runs across five fault classes plus healthy
   controls. The verdict is computed deterministically from the Splunk correlation, so a run cannot
   pass on a hallucinated analysis. Across the fault runs: detection 90%, localization 92%,
-  classification 90%, root cause 95%. Across the controls: **0% false alarms.**
+  classification 90%, root cause 95% (on the error-bearing classes). Across the controls: **0%
+false alarms.**
 - **RCAEval RE3** (a recognized academic RCA benchmark): on 57 Online Boutique and Train Ticket
   cases, kassi localizes the root-cause service at top-1 in **81%** of cases and within top-3 in
   **100%**, competitive with the strongest published methods and well ahead of the classical
