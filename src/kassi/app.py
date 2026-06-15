@@ -939,8 +939,8 @@ async def _narrate(state: State, verdict: str) -> str:
     return arcana.adorn(_omen_fallback(state, verdict))
 
 
-def build_application():
-    return (
+def build_application(hooks=None):
+    builder = (
         ApplicationBuilder()
         .with_actions(
             select_mode=select_mode,
@@ -1021,8 +1021,10 @@ def build_application():
         )
         .with_entrypoint("select_mode")
         .with_tracker(tracker(project="kassi"))
-        .build()
     )
+    if hooks:
+        builder = builder.with_hooks(*hooks)
+    return builder.build()
 
 
 if __name__ == "__main__":

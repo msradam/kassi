@@ -37,7 +37,7 @@ Built for the Splunk Agentic Ops Hackathon (Observability track). See
 [`architecture_diagram.md`](architecture_diagram.md) and
 [`docs/SUBMISSION.md`](docs/SUBMISSION.md).
 
-![kassi driving the FSM and correlating k6 results with Splunk telemetry](docs/demo.gif)
+<p align="center"><img src="docs/assets/kassi-run.gif" alt="kassi walking its state machine from The Fool to Judgement, correlating k6 load with Splunk telemetry, and proposing a fix" width="860" /></p>
 
 The demo above is a recorded end-to-end run: it prints the state machine, then drives the
 whole workflow (script + analysis from the configured model, k6 docs + run, Splunk preflight
