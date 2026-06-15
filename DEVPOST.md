@@ -9,6 +9,15 @@ observes.
 Named for Kassandra, who foresaw disaster and was never believed. kassi's prophecy comes with
 proof, and a patch.
 
+**Built on Theodosia, a framework I wrote.** kassi is not a script. It is an application on
+[Theodosia](https://msradam.github.io/theodosia/), my open-source (Apache-2.0) framework for
+serving a [Burr](https://github.com/apache/burr) state machine as a *governed* MCP server.
+Theodosia gives the driving agent one constant tool surface (it sees a single `step` tool, no
+matter how complex the workflow), hides the upstream MCP servers behind a single `call_upstream`,
+and writes every move and every refusal to an immutable, hash-chained ledger that `kassi verify`
+proves untampered. The framework is what makes the agent's autonomy auditable and safe by
+construction. kassi is the application that proves it out, end to end, on a real ops problem.
+
 > **Track:** Observability &nbsp;·&nbsp; **Repo:** open source, Apache-2.0 &nbsp;·&nbsp;
 > Full detail in the [README](README.md).
 
@@ -23,8 +32,9 @@ proof, and a patch.
   experiment, explains *why*, and hands back a fix: a minimal unified diff that applies cleanly.
 - **It runs hands-free.** `kassi watch` guards a repo and runs the whole workflow the moment a
   commit changes an endpoint, so the regression is caught at commit time, not at 2am.
-- **Its autonomy is governable.** A Burr state machine refuses illegal steps and hash-chains
-  every move. Safe to leave running unattended on ops infrastructure.
+- **It is built on my own framework.** Theodosia serves the workflow as a governed MCP server:
+  one constant tool surface, hidden upstreams, and a hash-chained ledger that refuses illegal
+  steps and `kassi verify` can prove. Autonomy that is auditable by construction.
 - **It is model-agnostic.** The same harness runs the entire loop on a local open 8B (on-prem,
   air-gapped) or on a frontier model, unchanged.
 - **It is measured.** 0% false alarms on a live ground-truth benchmark; root cause in the top 3
@@ -84,13 +94,26 @@ reads as DEGRADING, a regression the error rate alone would miss.
 
 ## How we built it
 
-**One agent, two MCP servers, one audited state machine.** The workflow is a
-[Burr](https://github.com/apache/burr) state machine served over MCP by
-[Theodosia](https://msradam.github.io/theodosia/). It spawns the Grafana k6 MCP server and the
-official Splunk MCP Server as hidden upstreams. The driving agent never sees them. It sees one
-tool, `step(action, inputs)`, and the graph's edges are the only legal moves. An illegal step is
-refused with the valid next actions, and every step and every refusal is written to an immutable,
-hash-chained ledger. `kassi verify` proves the trail was not tampered with.
+**Theodosia, the framework underneath.** kassi is built on
+[Theodosia](https://msradam.github.io/theodosia/), my open-source framework for mounting a
+[Burr](https://github.com/apache/burr) state machine as a governed MCP server. Theodosia is what
+turns a workflow graph into a safe agent surface, and it does the heavy lifting kassi would
+otherwise reinvent:
+
+- **One constant tool surface.** However many phases the FSM has, the driving agent sees a single
+  `step(action, inputs)` tool. The action namespace lives in `step`'s schema, so the agent's
+  autonomy is bounded by the graph, not by a sprawling toolset.
+- **Hidden upstreams.** Theodosia spawns the Grafana k6 MCP server and the official Splunk MCP
+  Server as upstream MCP servers and exposes them only through one internal `call_upstream`. The
+  driver never sees them; kassi orchestrates both behind the single `step` surface.
+- **Governed transitions.** The graph's edges are the only legal moves. An illegal step is refused
+  with the valid next actions, so the agent cannot wander off the workflow.
+- **A hash-chained ledger.** Every step and every refusal is written to an immutable, hash-chained
+  audit trail. `kassi verify` proves it was not tampered with, which is what makes the agent safe
+  to leave running unattended on ops infrastructure.
+
+kassi is the application; Theodosia is the substrate. The same framework would mount any other
+Burr workflow as an equally governed, equally auditable agent.
 
 **Deterministic where it counts, model where it helps.** The model never writes SPL; pure Python
 composes the correlation queries. A deterministic scaffold always produces a runnable k6 baseline,
