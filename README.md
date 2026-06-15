@@ -363,8 +363,9 @@ and names the root cause 95%; the controls hold a 0% false-alarm rate. A second 
 `kassi-bench-ext`, runs kassi against go-httpbin (a third-party app it never instrumented, observed
 through a generic access-log proxy) and scores 15/15. Against the canonical academic benchmark
 **RCAEval RE3** (code-level faults in Online Boutique and Train Ticket), kassi's diagnosis engine
-localizes the root-cause service at top-1 in **81%** of 57 cases and within top-3 in **100%**, where
-published baselines report AC@1 in the 0.3-0.6 range. Between them the suites found and fixed three
+localizes the root-cause service at top-1 in **81%** of 57 cases (90% on Online Boutique) and within
+top-3 in **100%**, competitive with the strongest published methods and well ahead of the classical
+baselines. Between them the suites found and fixed three
 real bugs: a missing throttling branch, a too-low latency floor, and a validation step that read a
 crossed k6 threshold as a broken script. Full methodology and tables:
 [`docs/benchmark/BENCHMARK.md`](docs/benchmark/BENCHMARK.md).

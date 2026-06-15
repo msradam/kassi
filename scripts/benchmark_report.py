@@ -66,11 +66,13 @@ scores the ranked services with RCAEval's own `Evaluator`.
 | **overall** | **{len(rows)}** | **{acc(rows, 1):.0%}** | **{acc(rows, 3):.0%}** | **{acc(rows, 5):.0%}** | **{avg5(rows):.0%}** |
 
 Scored against RCAEval's labels with its metric, kassi localizes the root-cause service at top-1 in
-{acc(rows, 1):.0%} of cases and within top-3 in {acc(rows, 3):.0%}; published RE3 baselines commonly
-report AC@1 in the 0.3-0.6 range. kassi is strongest on error-manifesting code faults (its design
-center) and holds up on pure-latency propagation faults, where the failure surfaces on the caller and
-the baseline-relative anomaly separates the service that changed from the entry service that merely
-amplifies it.
+{acc(rows, 1):.0%} of cases and within top-3 in {acc(rows, 3):.0%}. That is competitive with the
+strongest published methods on this suite (e.g. PRISM reports ~90% top-1 / 98% top-3 on Online
+Boutique, which kassi matches) and well ahead of the classical baselines (e.g. BARO reports ~0.50
+top-1 on Train Ticket and 0.00 on Sock Shop). kassi is strongest on error-manifesting code faults
+(its design center); on the deeper Train Ticket call graph it trails the best methods, where the
+failure surfaces on the caller and the baseline-relative anomaly has to separate the service that
+changed from the entry service that merely amplifies it.
 
 Scope, stated plainly: this tests kassi's correlation engine, not the live k6 loop (RCAEval bakes the
 load into the recorded traces), and kassi runs here as a blind multi-service ranker rather than its

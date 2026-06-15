@@ -270,9 +270,11 @@ truth, scored by top-k localization. We project each case's recorded spans into 
 access-log shape kassi reads in production and run kassi's real correlation plus a baseline-relative
 latency-anomaly score, then score the ranked services with RCAEval's own `Evaluator`. Across 57
 cases kassi localizes the root-cause service at top-1 in **81%** of cases (90% on Online Boutique)
-and within top-3 in **100%**; published RE3 baselines commonly report AC@1 in the 0.3-0.6 range. This
-tests the correlation engine, not the live loop (RE3 bakes the load into the traces), and Sock Shop
-is excluded because its RE3 release ships only aggregated mesh metrics, no request-level traces.
+and within top-3 in **100%**, competitive with the strongest published methods (PRISM reports ~90%
+top-1 on Online Boutique, which kassi matches) and well ahead of the classical baselines, while
+trailing the best methods on the deeper Train Ticket call graph. This tests the correlation engine,
+not the live loop (RE3 bakes the load into the traces), and Sock Shop is excluded because its RE3
+release ships only aggregated mesh metrics, no request-level traces.
 
 Both suites are deliberately distinct from infrastructure-fault RCA benchmarks that inject
 CPU/memory/network faults and score offline: kassi-bench exercises a real code change live through k6
