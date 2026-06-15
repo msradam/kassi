@@ -48,3 +48,6 @@ scripts/purge_runs.py
 docs/demo.tape
 docs/shots.tape
 docs/assets/cover-3x2.png
+
+# devpost gallery assets (local, not part of the repo)
+devpost-gallery/
