@@ -4,49 +4,28 @@
 
 > Divines disaster, crafts the cure.
 
-Closed-loop observability, driven by change. Roughly 80% of production outages are
-self-inflicted: Gartner attributes unplanned downtime to people and process, not technology, and
-change is the single biggest cause. The warning usually exists, but you can't prove it before the
-change ships.
+<p align="center">
+  <img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License: Apache-2.0" />
+  <img src="https://img.shields.io/badge/python-3.12%2B-blue" alt="Python 3.12+" />
+  <img src="https://img.shields.io/badge/MCP-k6%20%2B%20Splunk-8A2BE2" alt="MCP: k6 + Splunk" />
+</p>
 
-kassi closes that loop. Point it at a code change (a git diff) or a plain-language intent, and it
-load-tests the affected endpoints with real traffic through the Grafana k6 MCP server, reads the
-target's server-side telemetry back from Splunk over the exact window, and explains what the change
-did and why. You get a cited root-cause analysis with the evidence, an ML forecast of the trend, a
-remediation diff that fixes the cause, and a verdict published to a Splunk dashboard. A change comes
-in, a change that fixes it goes out, every step sealed to an auditable, hash-chained ledger, so the
-prophecy comes with proof and a patch.
+**kassi is an AI agent that load-tests a code change, finds the regression in live Splunk, and
+writes the fix, before it reaches production.** Point it at a git diff or a plain-language intent.
+It drives real [k6](https://github.com/grafana/mcp-k6) load against the affected endpoints,
+correlates the result with server-side telemetry from the official
+[Splunk MCP Server](https://splunkbase.splunk.com/app/7931), names the root cause, and hands back a
+validated remediation diff. For engineering and SRE teams who need to catch load-induced
+regressions before a 2am page.
 
-kassi is named for Kassandra, who foresaw what others would not believe. It reads a change and
-foretells how it behaves under load. The workflow is themed as a tarot draw: the agent turns one
-card of the Major Arcana per phase (`kassi arcana` lays out the full spread).
+kassi runs as an audited [Burr](https://github.com/apache/burr) state machine over MCP, served by
+[Theodosia](https://msradam.github.io/theodosia/): the driving agent sees one tool, illegal steps
+are refused, and every step and refusal lands on a hash-chained ledger. Named for Kassandra, who
+foresaw what others would not believe; the workflow is themed as a tarot draw, one Major Arcana
+card per phase (`kassi arcana` lays out the spread).
 
-kassi is a [Burr](https://github.com/apache/burr) state machine served over MCP by
-[Theodosia](https://msradam.github.io/theodosia/). An agent drives the workflow one
-`step` at a time. The graph's edges are the only legal moves: an illegal step is
-refused with the list of valid next actions, and every step (and every refusal) is
-recorded to an immutable, hash-chained ledger. One agent orchestrates **two MCP
-servers** as upstreams, neither visible to the driving agent:
-
-- the official [Grafana k6 MCP server](https://github.com/grafana/mcp-k6) validates
-  and runs the load test;
-- the official [Splunk MCP Server](https://splunkbase.splunk.com/app/7931) runs SPL
-  to pull the target's server-side telemetry over the exact test window.
-
-The current scope is deliberately tight: kassi does one job end to end (take a change, exercise it
-under load, find what broke, and propose the fix) rather than handing a frontier model a pile of
-tools and broad autonomy. The work runs in deterministic phases: the two MCP servers generate and
-run the load and read the telemetry back, and plain Python composes the SPL and the verdict. The
-model is used only where judgment helps (authoring the script, writing the grounded analysis,
-proposing the diff), never to carry the workflow itself. That gated shape is what makes the loop
-auditable, reproducible, and measurable against ground truth (see the [benchmark](#benchmark)
-below). It is built to grow from there: the state machine takes more phases and subgraphs, more MCP
-servers plug in as upstreams, and the gating and audit guarantees hold as the workflow expands.
-kassi is a functional prototype of that larger pattern, proven end to end on one real ops problem.
-
-Built for the Splunk Agentic Ops Hackathon (Observability track). See
-[`DEVPOST.md`](DEVPOST.md) for the submission writeup and
-[`architecture_diagram.md`](architecture_diagram.md) for the design.
+Built for the Splunk Agentic Ops Hackathon (Observability track). See [`DEVPOST.md`](DEVPOST.md)
+for the writeup and [`architecture_diagram.md`](architecture_diagram.md) for the design.
 
 <p align="center"><img src="docs/assets/kassi-run.gif" alt="kassi walking its state machine from The Fool to Judgement, correlating k6 load with Splunk telemetry, and proposing a fix" width="860" /></p>
 
@@ -62,6 +41,18 @@ and correlation) against a live Splunk.
 | **`kassi render`**: the full state machine, legal edges only | **`kassi arcana`**: a card per phase |
 | ![doctor](docs/assets/shot-doctor.png) | ![correlate](docs/assets/shot-correlate.png) |
 | **`kassi doctor --runtime`**: graph + governance checks | **a full run**: k6 + Splunk correlated, every tool call logged |
+
+## What it does
+
+- **Diff or intent driven.** Reads the changed endpoints from a git diff, or scores an OpenAPI spec against a plain-language intent.
+- **Real load, not a guess.** Generates and runs an actual k6 test through the Grafana k6 MCP server, on top of a deterministic scaffold so a run never fails for lack of a model.
+- **Server-side truth from Splunk.** Correlates the run with windowed SPL through the official Splunk MCP Server, then forecasts the latency band with the Splunk AI Toolkit (`StateSpaceForecast` + `anomalydetection`).
+- **Root cause and a fix.** Writes a cited analysis and a validated remediation diff that applies cleanly, screened by an independent auditor model before the verdict is sealed.
+- **Audited by construction.** A governed state machine refuses illegal steps; every step and refusal is on a hash-chained ledger that `kassi verify` checks.
+- **Hands-free guard.** `kassi watch` runs the whole workflow when a commit changes an endpoint, catching the regression at commit time.
+- **Model-agnostic.** The same loop (drive, write, audit) runs on a local open 8B, on-prem and air-gapped, or on a frontier model, unchanged.
+- **Self-observable.** Publishes its own state-machine walk back to Splunk, so the agent is visible in the system it observes.
+- **Measured.** 0% false alarms on a live ground-truth benchmark; root cause in the top 3 100% of the time on RCAEval RE3 ([details](#benchmark)).
 
 ## Install
 
@@ -105,6 +96,37 @@ unchanged.
 
 The Splunk step is optional: without `KASSI_SPLUNK_MCP_ENDPOINT` + `KASSI_SPLUNK_TOKEN`
 set, kassi skips correlation and runs k6-only.
+
+## Quickstart
+
+The fastest first success needs no Splunk, k6, or model. It runs the whole state machine against
+fakes:
+
+```bash
+uv run pytest        # the full workflow against Theodosia's FakeUpstream and a fake model
+kassi render         # print the state machine
+kassi arcana         # the tarot spread, one card per phase
+```
+
+For a full live run against a bundled demo app (starts the app, drives real k6, queries live
+Splunk, writes the grounded analysis):
+
+```bash
+uv run python scripts/verify_scenario.py petclinic   # or storefront | feed | gateway | orders
+```
+
+## Design
+
+The current scope is deliberately tight: kassi does one job end to end (take a change, exercise it
+under load, find what broke, and propose the fix) rather than handing a frontier model a pile of
+tools and broad autonomy. The work runs in deterministic phases: the two MCP servers generate and
+run the load and read the telemetry back, and plain Python composes the SPL and the verdict. The
+model is used only where judgment helps (authoring the script, writing the grounded analysis,
+proposing the diff), never to carry the workflow itself. That gated shape is what makes the loop
+auditable, reproducible, and measurable against ground truth (see the [benchmark](#benchmark)
+below). It is built to grow from there: the state machine takes more phases and subgraphs, more MCP
+servers plug in as upstreams, and the gating and audit guarantees hold as the workflow expands.
+kassi is a functional prototype of that larger pattern, proven end to end on one real ops problem.
 
 ## Usage
 
