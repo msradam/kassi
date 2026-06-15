@@ -133,6 +133,29 @@ and recommendation, and the verdict reflects the kind of failure: a 5xx change r
 regression, while a zero-error latency change reads as "degrading", flagged off Splunk's own
 forecast, a regression the error rate would miss entirely.
 
+### Case studies
+
+Four of those targets are written up as full case studies in
+[`case-studies/`](../case-studies/), one per failure class, each with the real verdict, the
+Splunk numbers, the proposed fix, and a one-command reproduce:
+
+1. [Load-only write-lock regression](../case-studies/01-load-only-write-lock-regression.md):
+   a new endpoint that passes every unit test and throws `database is locked` at 22% 5xx the
+   moment two writers contend, found by reading the server-side error from Splunk.
+2. [The degradation no error alarm catches](../case-studies/02-silent-latency-degradation.md):
+   an unbounded recompute whose p95 creeps toward the forecast wall with **zero errors**, so
+   every threshold stays green and only the Splunk forecast trend gives it away.
+3. [Throttled, not broken](../case-studies/03-throttled-not-broken.md): 49% of requests
+   failing with 429, which kassi correctly declines to page on, because the server is healthy
+   and the failures are client-side rate limiting, not a fault. The discipline that makes the
+   other verdicts trustworthy.
+4. [The cause is a dependency](../case-studies/04-downstream-timeout-cascade.md): a downstream
+   timeout cascade where the changed code is correct and the fix is resilience, not a patch to
+   the diff, and the case that motivates the `kassi watch` commit-time guard.
+
+The spread is the point: two of these page you, one must not, and one never trips a threshold.
+kassi tells them apart from the same evidence.
+
 ## How we built it
 
 - **Theodosia + Burr.** The workflow is a Burr state machine served over MCP by
