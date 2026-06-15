@@ -95,7 +95,7 @@ and a downstream timeout cascade. Four are written up as [case studies](case-stu
 verdict reflects the *kind* of failure: a 5xx reads as a regression, a zero-error latency creep
 reads as DEGRADING, a regression the error rate alone would miss.
 
-## How we built it
+## How I built it
 
 **Theodosia, the framework underneath.** kassi is built on
 [Theodosia](https://msradam.github.io/theodosia/), the framework I wrote for mounting a
@@ -144,7 +144,7 @@ own execution back to Splunk over HEC: one event per state-machine phase, keyed 
 dashboard renders the agent's walk next to the client-and-server join, so an operator sees not
 just what the change did but how the agent reached the verdict.
 
-## Challenges we ran into
+## Challenges I ran into
 
 - The k6 MCP runs a single script string and cannot resolve local imports, so codegen had to emit
   one self-contained file built from the OpenAPI schema.
@@ -157,7 +157,7 @@ just what the change did but how the agent reached the verdict.
 - Wiring the official Splunk MCP Server over its streamable-HTTP transport, with an encrypted
   token and a self-signed certificate, through the `mcp-remote` bridge.
 
-## Accomplishments that we're proud of
+## Accomplishments I'm proud of
 
 - One agent orchestrating load generation and observability inside a single audited state machine.
 - Client-side and server-side data correlated automatically over a precise window, driven from a
@@ -171,9 +171,9 @@ just what the change did but how the agent reached the verdict.
 
 ## Validation
 
-We did not want to claim kassi "correlates problems" on the strength of a demo, so we measured it.
+I did not want to claim kassi "correlates problems" on the strength of a demo, so I measured it.
 
-- **kassi-bench** (live k6 to Splunk, our apps): 80 runs across five fault classes plus healthy
+- **kassi-bench** (live k6 to Splunk, my apps): 80 runs across five fault classes plus healthy
   controls. The verdict is computed deterministically from the Splunk correlation, so a run cannot
   pass on a hallucinated analysis. Across the fault runs: detection 90%, localization 92%,
   classification 90%, root cause 95% (on the error-bearing classes). Across the controls: **0%
@@ -191,7 +191,7 @@ The benchmark earned those numbers by failing first: it surfaced three real verd
 fixed and locked by a regression test. Harnesses and raw results are in the repo, each reproducible
 with one command. Detail in [docs/benchmark/BENCHMARK.md](docs/benchmark/BENCHMARK.md).
 
-## What we learned
+## What I learned
 
 - Constraining the agent makes it more useful, not less. One `step` tool with refusals is easier
   to drive and far easier to trust than a broad toolset.
