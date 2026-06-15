@@ -42,9 +42,11 @@ propose a fix.
 
 ## Inspiration
 
-Roughly 80% of production outages are self-inflicted, and change is the single biggest cause.
-Every engineer has been Cassandra about a deploy: you sensed it was risky, you couldn't prove
-it, it shipped, and it took down prod at 2am.
+Roughly 80% of production outages are self-inflicted: Gartner attributes them to people and
+process, not technology, and change is the single biggest cause, which is why
+[change failure rate](https://dora.dev/guides/dora-metrics-four-keys/) is one of the four DORA
+metrics. Every engineer has been Cassandra about a deploy: you sensed it was risky, you couldn't
+prove it, it shipped, and it took down prod at 2am.
 
 The reason is structural. A change can pass every unit and integration test and still hide a
 flaw, a lock, an N+1 query, an unbounded loop, that only appears under concurrent load. A unit
@@ -62,11 +64,14 @@ Give kassi a code change (a git diff) or a plain-language intent, and it:
 
 1. **picks the affected endpoints** from the diff, or by scoring an OpenAPI spec against the
    intent,
-2. **generates and runs a real k6 load test** through the Grafana k6 MCP server, grounded in
-   k6's own documentation and generation prompts,
+2. **generates and runs a real k6 load test** through the
+   [Grafana k6 MCP server](https://github.com/grafana/mcp-k6), grounded in k6's own documentation
+   and generation prompts,
 3. **reads the server-side truth back from Splunk** over the exact test window through the
-   official Splunk MCP Server, then runs the Splunk AI Toolkit's `StateSpaceForecast` and
-   `anomalydetection` over that window to locate the saturation onset statistically,
+   official [Splunk MCP Server](https://splunkbase.splunk.com/app/7931), then runs the
+   [Splunk AI Toolkit](https://help.splunk.com/en/splunk-cloud-platform/apply-machine-learning/use-ai-toolkit/5.7.2/introduction-to-the-ai-toolkit/welcome-to-the-ai-toolkit)'s
+   `StateSpaceForecast` and `anomalydetection` over that window to locate the saturation onset
+   statistically,
 4. **writes a cited, grounded analysis** (root cause, evidence, recommendation) and a
    **remediation diff** that fixes the cause,
 5. **audits its own analysis** with a second, independent model before publishing, then reports
@@ -173,12 +178,13 @@ We did not want to claim kassi "correlates problems" on the strength of a demo, 
   pass on a hallucinated analysis. Across the fault runs: detection 90%, localization 92%,
   classification 90%, root cause 95% (on the error-bearing classes). Across the controls: **0%
 false alarms.**
-- **RCAEval RE3** (a recognized academic RCA benchmark): on 57 Online Boutique and Train Ticket
+- **[RCAEval RE3](https://github.com/phamquiluan/RCAEval)** (a recognized academic RCA benchmark,
+  [WWW'25](https://arxiv.org/abs/2412.17015)): on 57 Online Boutique and Train Ticket
   cases, kassi localizes the root-cause service at top-1 in **81%** of cases and within top-3 in
   **100%**, competitive with the strongest published methods and well ahead of the classical
   baselines.
-- **go-httpbin** (a third-party app kassi never instrumented, observed through a generic access-log
-  proxy): **15/15.** It called the erroring endpoint a regression, the slow one a degradation, and
+- **[go-httpbin](https://github.com/mccutchen/go-httpbin)** (a third-party app kassi never
+  instrumented, observed through a generic access-log proxy): **15/15.** It called the erroring endpoint a regression, the slow one a degradation, and
   stayed silent on the healthy control.
 
 The benchmark earned those numbers by failing first: it surfaced three real verdict bugs, each now
