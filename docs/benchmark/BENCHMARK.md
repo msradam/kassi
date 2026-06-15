@@ -32,8 +32,8 @@ surface under concurrency.
 
 - **8 scenarios.** 5 faults, each a distinct failure class, plus
   3 healthy controls: the same apps under the same load on a benign endpoint, where
-  the only correct answer is "nothing wrong." Controls measure false positives; a benchmark that
-  cannot fail proves nothing.
+  the only correct answer is "nothing wrong." Controls measure false positives; without them, a
+  passing score would not mean much.
 - **The real pipeline, model in the loop.** Every run, the configured model authors the k6 script,
   writes the cited analysis, and an independent guardian pass audits it, with the load held at 25
   VUs / 25s. The model is pluggable behind one `LLM` interface: a local 8B over Ollama or a frontier
@@ -87,7 +87,7 @@ top-1 on Train Ticket and 0.00 on Sock Shop). kassi is strongest on error-manife
 failure surfaces on the caller and the baseline-relative anomaly has to separate the service that
 changed from the entry service that merely amplifies it.
 
-Scope, stated plainly: this tests kassi's correlation engine, not the live k6 loop (RCAEval bakes the
+Scope: this tests kassi's correlation engine, not the live k6 loop (RCAEval bakes the
 load into the recorded traces), and kassi runs here as a blind multi-service ranker rather than its
 normal targeted-confirmation flow. RCAEval's Sock Shop RE3 ships only aggregated Istio mesh metrics
 and unstructured logs, no distributed traces, so it is excluded: kassi reads request-level wire
@@ -102,7 +102,7 @@ uv run python scripts/benchmark_rcaeval.py --systems OB,TT
 ## External validation (kassi-bench-ext)
 
 kassi-bench above runs on kassi's own demo apps. kassi-bench-ext points kassi at **go-httpbin**, a
-popular third-party OSS app kassi never instrumented, observed only through a generic access-log
+third-party OSS app kassi never instrumented, observed only through a generic access-log
 proxy (`scripts/access_proxy.py`) that ships its traffic into Splunk the way a real API gateway or
 load balancer would. go-httpbin's endpoints are app-intrinsic ground truth: `/status/500` errors,
 `/delay/2` is genuinely slow, `/get` is healthy.
@@ -144,8 +144,7 @@ Three real defects surfaced from these runs and were fixed, each covered by `tes
    run"). But exit 99 means the script ran fine and the SUT breached an SLO, which is the finding,
    not a script error. `parse_validation` now accepts exit 99 as valid, so run_test measures it.
 
-That is the point of the controls and the external run: they found three ways kassi was wrong and
-turned them into fixes.
+The controls and the external run found three ways kassi was wrong, and turned them into fixes.
 
 ## Scope and limits
 

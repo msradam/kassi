@@ -19,11 +19,12 @@ conn.commit()
 
 ## What the tests missed
 
-Every unit test passes. One request at a time, the endpoint is flawless: it opens
+Every unit test passes. One request at a time, the endpoint works fine: it opens
 a connection, takes the lock, writes, commits, returns 201. Nothing in a serial
 test suite touches the lock contention, because there is no second writer to
-contend with. This is the canonical load-only regression: correct in isolation,
-broken under concurrency, and completely invisible to the test that shipped it.
+contend with. This is the canonical load-only regression. The code is correct one
+request at a time and breaks only under concurrency, so the test suite that shipped
+it never had a chance to see it.
 
 ## What kassi found
 
@@ -66,11 +67,11 @@ conn.commit()
 ## Why it matters
 
 This is the failure mode the hackathon brief is about: a change that ships green
-and pages you at 2am. The lock contention does not exist in CI, does not exist in
-staging if staging is quiet, and only appears when production traffic arrives. The
-warning signal, `database is locked`, is server-side, so a load test alone never
-surfaces it. kassi runs the load *and* reads the server truth, names the cause, and
-hands back a diff a reviewer can merge.
+and pages you at 2am. The lock contention never shows up in CI, and it stays hidden
+in staging too if staging is quiet. It only appears once real production traffic
+hits the endpoint. The warning signal, `database is locked`, is server-side, so a
+load test alone never surfaces it. kassi runs the load, reads the server truth back,
+names the cause, and hands back a diff a reviewer can merge.
 
 ## Reproduce
 

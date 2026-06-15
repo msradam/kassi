@@ -43,13 +43,13 @@ client-side throttling: /api/quote 49% 4xx, no server errors
 
 ## Why it matters
 
-The hardest thing for an automated diagnoser is not finding faults, it is *not*
-finding faults that are not there. A system that flags everything is as useless as
-one that flags nothing. This case proves kassi reads the evidence rather than
-pattern-matching on "errors went up": 49% of requests failing is a five-alarm
-number, and the correct response is to not page anyone. The same run, told apart
-from a real 5xx regression by reading server-side status codes from Splunk, is what
-lets the other three case studies be trusted.
+The hard part of an automated diagnoser isn't catching faults. It's staying quiet
+when nothing is actually wrong. A tool that cries wolf on healthy traffic gets
+muted, and then it misses the real regression too. This case shows kassi reads the
+evidence rather than pattern-matching on "errors went up": 49% of requests failing
+is a five-alarm number, and the correct response is to not page anyone. The same run,
+told apart from a real 5xx regression by reading server-side status codes from
+Splunk, is what lets the other three case studies be trusted.
 
 This pairs with the control scenarios. On the *healthy* versions of these services
 (`gateway-ok`, `petclinic-ok`, `storefront-ok`), kassi returns `passed` every time:

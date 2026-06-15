@@ -290,15 +290,14 @@ Each phase is a card the agent turns. Run `kassi arcana` for the full spread.
 
 ## Case study
 
-Verified end-to-end against **Splunk Enterprise 10.4.0** with the **official Splunk MCP
-Server** (Splunkbase 7931, v1.2.0), called live at runtime. `scripts/verify_petclinic.py`
-drives the whole FSM with **nothing canned**, in **diff mode**: a throwaway git repo holds a
-healthy petclinic baseline plus a second commit that adds `POST /api/visits`, so kassi picks
-the changed endpoint from the diff, runs **real k6** through the k6 MCP server against it,
-reads the server-side regression back from Splunk through the four `correlate` queries, and
-runs the AI Toolkit's `StateSpaceForecast` (with `predict` as the fallback) plus
-`anomalydetection` over the same window in `detect_anomalies`, all on the official
-`splunk_run_query` tool.
+Verified end-to-end against Splunk Enterprise 10.4.0 with the official Splunk MCP Server
+(Splunkbase 7931, v1.2.0), called live at runtime. `scripts/verify_petclinic.py` drives the
+whole FSM with nothing canned, in diff mode. A throwaway git repo holds a healthy petclinic
+baseline plus a second commit that adds `POST /api/visits`, so kassi picks the changed
+endpoint from the diff, runs real k6 through the k6 MCP server against it, and reads the
+server-side regression back from Splunk through the four `correlate` queries. It also runs the
+AI Toolkit's `StateSpaceForecast` (with `predict` as the fallback) and `anomalydetection` over
+the same window in `detect_anomalies`, all on the official `splunk_run_query` tool.
 
 ```console
 $ KASSI_LLM=claude_agent uv run python scripts/verify_petclinic.py

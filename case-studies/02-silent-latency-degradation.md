@@ -46,8 +46,8 @@ Splunk forecast p95 80.64ms, 1 anomalous bucket(s)
 
 ## The fix it proposed
 
-Bound the unbounded thing. The diff caps the store so the rescan cost stops growing
-with lifetime traffic.
+Bound the store. The diff caps it so the rescan cost stops growing with lifetime
+traffic.
 
 ```python
 _events.append({"topic": str(event.get("topic", "general"))})
@@ -58,11 +58,11 @@ seen = len(_events)
 
 ## Why it matters
 
-This is the case that makes the architecture worth it. A regression with a 5xx is
-findable many ways; a degradation with no error and no threshold breach is findable
-almost no way without forecasting the trend. By reading the server-side latency
-back from Splunk over the test window and running Splunk's own ML over it, kassi
-calls the climb before it hits the wall, while the dashboard still reads green.
+This is the case that makes the architecture worth it. A 5xx regression is easy to
+catch lots of ways. A degradation with no error and no threshold breach is almost
+impossible to catch without forecasting the trend. By reading the server-side
+latency back from Splunk over the test window and running Splunk's own ML over it,
+kassi calls the climb before it hits the wall, while the dashboard still reads green.
 The verdict labels it `DEGRADING`, not `REGRESSION`, so the on-call response is
 "there is time to fix this" rather than "everything is fine."
 

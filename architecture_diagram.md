@@ -11,7 +11,7 @@ watch`) that runs the whole workflow automatically the moment a commit changes a
 ```mermaid
 flowchart TB
     subgraph Entry["How a run starts"]
-        A["interactive: a tool-calling model drives step by step<br/>(kassi pilot, Claude Code, any MCP client) — sees ONE tool: step(action, inputs)"]
+        A["interactive: a tool-calling model drives step by step<br/>(kassi pilot, Claude Code, any MCP client); sees ONE tool: step(action, inputs)"]
         W["background: kassi watch polls git HEAD<br/>on an endpoint-changing commit, runs the workflow in diff mode"]
     end
 
@@ -151,9 +151,9 @@ report. The `detect_anomalies` step then runs Splunk's own ML over the same wind
 the same tool: the AI Toolkit's `StateSpaceForecast` forecasts the latency band (core
 `predict` as a fallback when the toolkit is absent) and `anomalydetection` flags
 statistically outlying buckets, so the saturation onset is found by Splunk's ML, not by a
-fixed threshold in kassi. Connection is the official `mcp-remote` stdio bridge to the server's
-streamable-HTTP endpoint, authenticated with an encrypted Bearer token. Every Splunk and
-k6 tool call is recorded to the report's `mcp_provenance` block.
+fixed threshold in kassi. kassi connects to the Splunk MCP Server over the official `mcp-remote`
+stdio bridge to its streamable-HTTP endpoint, authenticated with an encrypted Bearer token. Every
+Splunk and k6 tool call is recorded to the report's `mcp_provenance` block.
 
 After `report`, kassi also writes *back* to Splunk over HEC: a `kassi:run` summary event and
 one `kassi:step` event per executed state-machine phase (the agent's own walk), both keyed by
@@ -182,12 +182,12 @@ Three layers of AI, kept deliberately narrow:
    published. The writer is not trusted on its own word. Keeping the work-phases deterministic
    and splitting writer from auditor keeps the blast radius of a bad model output small.
 
-The architecture separates **orchestration from the model**. The driver and the writer/auditor are
+The architecture separates orchestration from the model. The driver and the writer/auditor sit
 behind a model-neutral surface (the MCP `step` tool; the `LLM` Protocol with an Ollama backend and a
-Claude Agent SDK backend), so the model is pluggable: any capable tool-calling model can drive and
-author, and the deterministic scaffold + ledger hold regardless. The same harness runs the whole
-loop on a single local open 8B (on-prem, no cloud dependency) and scales up to a frontier model
-unchanged; the design scales **with** the model, it does not depend on one.
+Claude Agent SDK backend), so any capable tool-calling model can drive and author, while the
+deterministic scaffold and ledger hold regardless. The same harness runs the whole loop on a single
+local open 8B (on-prem, no cloud dependency) and scales up to a frontier model unchanged. It does
+not depend on a specific model.
 
 ## Data flow between services, APIs, and components
 
