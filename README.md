@@ -34,8 +34,8 @@ servers** as upstreams, neither visible to the driving agent:
   to pull the target's server-side telemetry over the exact test window.
 
 Built for the Splunk Agentic Ops Hackathon (Observability track). See
-[`architecture_diagram.md`](architecture_diagram.md) and
-[`docs/SUBMISSION.md`](docs/SUBMISSION.md).
+[`DEVPOST.md`](DEVPOST.md) for the submission writeup and
+[`architecture_diagram.md`](architecture_diagram.md) for the design.
 
 <p align="center"><img src="docs/assets/kassi-run.gif" alt="kassi walking its state machine from The Fool to Judgement, correlating k6 load with Splunk telemetry, and proposing a fix" width="860" /></p>
 

@@ -10,7 +10,7 @@ Named for Kassandra, who foresaw disaster and was never believed. kassi's prophe
 proof, and a patch.
 
 > **Track:** Observability &nbsp;·&nbsp; **Repo:** open source, Apache-2.0 &nbsp;·&nbsp;
-> Full detail in the [README](README.md) and [docs/SUBMISSION.md](docs/SUBMISSION.md).
+> Full detail in the [README](README.md).
 
 ---
 
@@ -211,5 +211,4 @@ remediation diff, and publishing the run back to Splunk).
   end to end with nothing canned.
 
 **Links.** [README](README.md) · [Architecture](architecture_diagram.md) ·
-[Case studies](case-studies/) · [Benchmarks](docs/benchmark/BENCHMARK.md) ·
-[Full submission writeup](docs/SUBMISSION.md)
+[Case studies](case-studies/) · [Benchmarks](docs/benchmark/BENCHMARK.md)

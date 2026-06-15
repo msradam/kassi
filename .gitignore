@@ -51,3 +51,6 @@ docs/assets/cover-3x2.png
 
 # devpost gallery assets (local, not part of the repo)
 devpost-gallery/
+
+# private submission notes (canonical writeup is DEVPOST.md)
+docs/SUBMISSION.md
