@@ -33,6 +33,15 @@ servers** as upstreams, neither visible to the driving agent:
 - the official [Splunk MCP Server](https://splunkbase.splunk.com/app/7931) runs SPL
   to pull the target's server-side telemetry over the exact test window.
 
+This is a deliberately narrow tool. kassi does one job end to end (take a change, exercise it
+under load, find what broke, and propose the fix) instead of handing a frontier model a pile of
+tools and broad autonomy. The work runs in deterministic phases: the two MCP servers generate and
+run the load and read the telemetry back, and plain Python composes the SPL and the verdict. The
+model is used only where judgment helps (authoring the script, writing the grounded analysis,
+proposing the diff), never to carry the workflow itself. That narrow, gated shape is what makes
+the loop auditable and reproducible, and what makes it measurable against ground truth at all (see
+the [benchmark](#benchmark) below).
+
 Built for the Splunk Agentic Ops Hackathon (Observability track). See
 [`DEVPOST.md`](DEVPOST.md) for the submission writeup and
 [`architecture_diagram.md`](architecture_diagram.md) for the design.
