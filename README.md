@@ -116,6 +116,16 @@ kassi pilot --intent "load test the pet listing endpoint" \
 # or diff mode: kassi pilot --repo-path /path/to/repo --ref HEAD~1 --splunk-index web
 ```
 
+Run it in the background, triggered on diff detection. `kassi watch` polls a repo's git HEAD and,
+when a new commit changes an HTTP endpoint, drives the whole workflow in diff mode against that
+change, then prints the verdict and a proposed fix and publishes the run to Splunk, hands-free: a
+change comes in, a verdict goes out, so the regression is caught at commit time, not at 2am.
+
+```bash
+kassi watch --repo-path /path/to/repo --target-base-url http://localhost:8000 --splunk-index web
+# one-shot for a post-commit hook or CI: kassi watch --once --repo-path . --target-base-url ...
+```
+
 Or drive it from Claude Code (or any MCP client) by registering the server:
 
 ```bash
@@ -145,10 +155,10 @@ kassi verify <app-id>        # confirm the ledger has not been tampered with
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `KASSI_LLM` | `ollama` | model backend for script authoring, analysis + narration: `ollama` or `anthropic` |
-| `KASSI_MODEL` | `granite4.1:8b` / `claude-haiku-4-5` | model tag (Ollama tag, or Claude model id when `KASSI_LLM=anthropic`) |
-| `OLLAMA_HOST` | `http://localhost:11434` | Ollama endpoint (point at the host running Granite, e.g. a LAN box) |
-| `ANTHROPIC_API_KEY` | unset | Claude API key (when `KASSI_LLM=anthropic`) |
+| `KASSI_LLM` | `ollama` | model backend: `ollama` (local), `claude_agent` (Claude via the Claude Code session, no API key), or `anthropic` (Claude Messages API) |
+| `KASSI_MODEL` | `granite4.1:8b` / `sonnet` | model tag: an Ollama tag, or a Claude model alias/id for the Claude backends |
+| `OLLAMA_HOST` | `http://localhost:11434` | Ollama endpoint (point at the host running the local model, e.g. a LAN box) |
+| `ANTHROPIC_API_KEY` | unset | Claude API key (only for `KASSI_LLM=anthropic`; `claude_agent` uses the logged-in Claude Code session instead) |
 | `KASSI_K6_CMD` | `k6 x mcp` | command line for the k6 MCP server (set to `mcp-k6` for the standalone binary) |
 | `KASSI_K6_DOCKER` | unset | if set, run the k6 MCP server via Docker |
 | `KASSI_K6_IMAGE` | `grafana/mcp-k6:latest` | Docker image when `KASSI_K6_DOCKER` is set |
@@ -291,7 +301,7 @@ runs the AI Toolkit's `StateSpaceForecast` (with `predict` as the fallback) plus
 `splunk_run_query` tool.
 
 ```console
-$ KASSI_LLM=anthropic envchain ai uv run python scripts/verify_petclinic.py
+$ KASSI_LLM=claude_agent uv run python scripts/verify_petclinic.py
 target app:  petclinic (flawed POST /api/visits) at http://127.0.0.1:8400
 diff mode:   HEAD~1..HEAD adds POST /api/visits         # kassi tests exactly the changed endpoint
 ... extract_endpoints_ok count=1                        # one new route, read from the diff
@@ -417,7 +427,7 @@ locally, seeding sample telemetry, and verifying the integration. The two helper
 ```bash
 uv run python scripts/seed_splunk.py            # index + HEC + sample data + verify the SPL kassi emits
 uv run python scripts/verify_correlate_live.py  # drive the whole FSM; correlate hits live Splunk
-KASSI_LLM=anthropic envchain ai uv run python scripts/verify_petclinic.py  # the real-app root-cause demo
+KASSI_LLM=claude_agent uv run python scripts/verify_petclinic.py  # the real-app root-cause demo
 ```
 
 `verify_petclinic.py` is the headline demo, nothing canned: it starts the

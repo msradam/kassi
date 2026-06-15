@@ -120,7 +120,7 @@ scripted.
    plus `anomalydetection`.
 
 ```bash
-KASSI_LLM=anthropic envchain ai uv run python scripts/verify_petclinic.py
+KASSI_LLM=claude_agent uv run python scripts/verify_petclinic.py
 ```
 
 A verified run: kassi extracted `POST /api/visits` from the diff, and real k6 drove 2937

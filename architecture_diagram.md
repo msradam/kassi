@@ -2,14 +2,17 @@
 
 kassi is one AI agent that orchestrates two MCP servers through a durable,
 state-machine-enforced workflow, then correlates client-side load-test results with
-server-side telemetry in Splunk.
+server-side telemetry in Splunk. It runs two ways: interactively (a tool-calling model drives
+it via `kassi pilot` or any MCP client), or as a **diff-triggered background guard** (`kassi
+watch`) that runs the whole workflow automatically the moment a commit changes an endpoint.
 
 ## System diagram
 
 ```mermaid
 flowchart TB
-    subgraph Driver["AI agent (driver) — local Granite, or any MCP client"]
-        A["local Granite (kassi pilot), Claude Code, or any MCP client<br/>drives step by step; sees ONE tool: step(action, inputs)"]
+    subgraph Entry["How a run starts"]
+        A["interactive: a tool-calling model drives step by step<br/>(kassi pilot, Claude Code, any MCP client) — sees ONE tool: step(action, inputs)"]
+        W["background: kassi watch polls git HEAD<br/>on an endpoint-changing commit, runs the workflow in diff mode"]
     end
 
     subgraph kassi["kassi: Burr FSM served over MCP by Theodosia"]
@@ -31,9 +34,9 @@ flowchart TB
         LEDGER[("immutable<br/>hash-chained ledger<br/>steps + refusals")]
     end
 
-    subgraph AI["AI / models (local Granite 4.1 family)"]
-        LLM["writer (Granite 4.1, or Claude)<br/>script, grounded analysis, remediation, narration"]
-        GUARD["auditor (Granite Guardian 4.1)<br/>groundedness check on the analysis"]
+    subgraph AI["AI / models (pluggable: local 8B via Ollama, or frontier via Claude Agent SDK)"]
+        LLM["writer<br/>script, grounded analysis, remediation, narration"]
+        GUARD["auditor (independent groundedness check)<br/>e.g. Granite Guardian, or the frontier model in audit mode"]
     end
 
     subgraph Upstreams["Upstream MCP servers (hidden from the driver)"]
@@ -49,6 +52,7 @@ flowchart TB
     TARGET["Target service<br/>(HTTP API under test)"]
 
     A -->|MCP: step| SM
+    W -->|diff detected, run in diff mode| SM
     kassi -.records.-> LEDGER
     DL -->|MCP call_upstream| K6
     SC -->|deterministic compose| GS
@@ -139,10 +143,12 @@ Three layers of AI, kept deliberately narrow:
 1. **The driving agent** decides which workflow step to take next. It sees only kassi's single
    `step` tool, and kassi's state machine refuses any illegal step and returns the legal next
    actions, so the agent's autonomy is bounded by construction and fully audited. The driver is
-   pluggable: Claude Code or any MCP client, or a **local Granite model** via `kassi pilot`
-   (`pilot.py`), which reads the reachable actions and calls `step` for each phase itself. With
-   the Granite driver, driver, writer, and auditor are all the same local model family, so the
-   whole loop runs on one box with no cloud brain.
+   pluggable: Claude Code or any MCP client, or a local open model via `kassi pilot` (`pilot.py`),
+   which reads the reachable actions and calls `step` for each phase itself. With a local model,
+   driver, writer, and auditor all run on one box, no cloud brain. There is also a **headless
+   entry point, `kassi watch`** (`cli.py`): it polls a repo's git HEAD and, when a commit changes
+   an endpoint, runs the same workflow in diff mode automatically, so the agent guards the repo and
+   catches the regression at commit time, hands-free.
 2. **A writer model** (a local IBM Granite 4.1 model by default, or Claude) authors the k6
    script on top of the deterministic scaffold, writes a cited analysis grounded on the run's
    evidence, proposes the remediation diff, and narrates the run. It never writes SPL; pure
@@ -153,12 +159,11 @@ Three layers of AI, kept deliberately narrow:
    and splitting writer from auditor keeps the blast radius of a bad model output small.
 
 The architecture separates **orchestration from the model**. The driver and the writer/auditor are
-behind a model-neutral surface (the MCP `step` tool; the `LLM` Protocol with Ollama and Anthropic
-backends), so the model is pluggable: any capable tool-calling model can drive and author, and the
-deterministic scaffold + ledger hold regardless. Granite 4.1 is the *default* because it proves the
-entire loop, drive, write, and audit, fits on a local 8B with no cloud dependency. Swap in a larger
-or hosted model and nothing else changes; the design scales with the model, it does not depend on
-one.
+behind a model-neutral surface (the MCP `step` tool; the `LLM` Protocol with an Ollama backend and a
+Claude Agent SDK backend), so the model is pluggable: any capable tool-calling model can drive and
+author, and the deterministic scaffold + ledger hold regardless. The same harness runs the whole
+loop on a single local open 8B (on-prem, no cloud dependency) and scales up to a frontier model
+unchanged; the design scales **with** the model, it does not depend on one.
 
 ## Data flow between services, APIs, and components
 
