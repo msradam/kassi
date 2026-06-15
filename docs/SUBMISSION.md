@@ -4,29 +4,41 @@
 > the fix, a remediation diff, before production ever sees it. Cassandra foresaw disaster and
 > was never believed; kassi's prophecy comes with proof, and a patch.
 
-**Elevator pitch.** Roughly 80% of production outages are self-inflicted: Gartner attributes
-unplanned downtime to people and process rather than technology, and change is the single biggest
-cause. The warning is usually there; it just isn't believed, because a change's real impact
-only surfaces in server-side telemetry after something exercises the system, and nobody
-generates traffic and correlates it with Splunk by hand before shipping. kassi closes that loop
-autonomously. Point it at a code change and it exercises the affected endpoints through the
-Grafana k6 MCP server, watches the server-side telemetry land in Splunk through the official
-Splunk MCP Server, and explains what the change did and *why*, root cause (`database is
-locked`), cited evidence, an ML forecast of the trend, and the fix, then publishes the verdict
-back to a Splunk dashboard. A change goes in, an explained outcome comes out: agentic
-observability, every step sealed to a hash-chained, auditable ledger, so the prophecy comes
-with proof and it is safe to run unattended. The audited state machine over MCP keeps the whole
-loop model-agnostic, so it scales from a hosted frontier model down to a local 8B that runs the
-driver, writer, and auditor on one box; and the agent publishes its own state-machine walk back to
-Splunk, so it is observable in the very system it observes.
+**What it is.** kassi is an AI agent that closes the observability loop on a code change. Point it at
+a diff, and it load-tests the affected endpoints (real traffic through the **Grafana k6 MCP server**),
+reads the server-side truth back from **Splunk** (the official **Splunk MCP Server** plus the **Splunk
+AI Toolkit**'s forecasting), names the root cause with cited evidence, and writes a **validated
+remediation diff**, all before the change reaches production. Every step is sealed to a hash-chained,
+auditable ledger, and the agent publishes its own run back to Splunk, so it is observable in the very
+system it observes. (Named for Kassandra, who foresaw what others would not believe.)
+
+### At a glance
+
+- **Live Splunk AI, never simulated.** Every run calls the official Splunk MCP Server and the Splunk
+  AI Toolkit (`StateSpaceForecast` + `anomalydetection`) against a real Splunk Enterprise 10.4.0, on
+  screen in the demo. The single biggest disqualifier is simulated Splunk output; kassi has none.
+- **Closes the loop both ways:** a change comes in, a verdict **and a fix** (a real, validated unified
+  diff that applies cleanly) go out.
+- **Runs hands-free.** `kassi watch` guards a repo: on a commit that changes an endpoint it runs the
+  whole workflow automatically and publishes the verdict, catching the regression at commit time, not
+  at 2am.
+- **Governable autonomy.** A Burr state machine refuses illegal steps and hash-chains every move;
+  `kassi verify` proves the trail was not tampered with. Safe to run unattended on ops infrastructure.
+- **Model-agnostic.** The same harness runs the whole loop (drive, write, audit) on a local open 8B,
+  on-prem and air-gapped, or on a frontier model, unchanged.
+- **Measured, not just demoed.** kassi-bench: 80 live runs, 0% false alarms on the controls. RCAEval
+  RE3 (the academic RCA benchmark): root cause in the top 3 **100%** of the time, competitive with the
+  strongest published methods. go-httpbin (a third-party app): 15/15.
+- Open source (Apache-2.0), reproducible with one command.
 
 **Track:** Observability (primary); also Platform & Developer Experience.
 **Bonus prizes targeted:** Best Use of Splunk MCP Server; Best Use of Splunk Developer Tools.
 
-Verified end-to-end against Splunk Enterprise 10.4.0 with the official Splunk MCP Server
-(Splunkbase 7931, v1.2.0); the model is pluggable (a local open 8B or a frontier model). See the case study in the README
-and `docs/SPLUNK_SETUP.md`. The Splunk integration was built during the submission period, extending a diff-to-k6
-tool from an earlier project of mine; see Additional information.
+**Beyond the 3-minute video.** The demo shows the two live diagnoses end to end. This writeup stresses
+what 3 minutes can't fit, and what most rewards a close read: the **`kassi watch`** background guard,
+the **benchmark methodology** (and the honest RCAEval comparison), the **deterministic-safety design**
+(the model never writes SPL, and a runnable scaffold means a run never fails for lack of a model), the
+**governance + audit** model, and the **model-agnostic, on-prem** story.
 
 ## Inspiration
 
@@ -91,6 +103,12 @@ or a **local open model** via `kassi pilot`, which reads the reachable actions a
 **with** the model rather than depending on one: the same harness runs on a single local 8B (driver,
 writer, and auditor all on one box, no cloud brain) and on a frontier model over the Claude Agent
 SDK. The model is a swappable component, not the design.
+
+**Two ways to run it.** Interactively, a model drives it (above). Or hands-free: **`kassi watch`**
+turns kassi into a background guard. It polls a repo's git HEAD and, the moment a commit changes an
+HTTP endpoint, drives the whole workflow in diff mode against that change and publishes the verdict
+and a proposed fix to Splunk. Drop it in a post-commit hook or CI (`--once`), or just leave it
+running, so the regression is caught the instant it is committed, not at 2am.
 
 In a verified run against live Splunk, driven from a git diff that adds `POST /api/visits`,
 one agent orchestrated 18 tool calls across both MCP servers: it extracted the changed
