@@ -1,0 +1,17 @@
+// Source for the "load and telemetry loop" text diagram in architecture_diagram.md.
+// Render aligned box-art with Graph::Easy (https://github.com/ironcamel/Graph-Easy):
+//   graph-easy --input=docs/diagrams/load-telemetry-loop.dot --as_boxart
+// (--as_ascii for pure ASCII).
+digraph { graph [rankdir=TB];
+  kassi  [label="kassi (orchestrator)"];
+  k6     [label="Grafana k6 MCP"];
+  target [label="target app (HTTP API)"];
+  ent    [label="Splunk Enterprise"];
+  splunk [label="Splunk MCP Server"];
+  kassi  -> k6     [label="call_upstream"];
+  k6     -> target [label="k6 load"];
+  target -> ent    [label="telemetry"];
+  ent    -> splunk [label="windowed SPL"];
+  splunk -> kassi  [label="findings"];
+  kassi  -> ent    [label="HEC: run + steps"];
+}

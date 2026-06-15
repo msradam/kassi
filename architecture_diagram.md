@@ -74,7 +74,10 @@ flowchart TB
 
 ## System diagram (text)
 
-Two views of the same architecture. First, how a run is driven and governed:
+Two views of the same architecture, rendered from the DOT sources in
+[`docs/diagrams/`](docs/diagrams/) with [Graph::Easy](https://github.com/ironcamel/Graph-Easy)
+(`graph-easy --input=docs/diagrams/run-orchestration.dot --as_boxart`). First, how a run is
+driven and governed:
 
 ```
                                        ┌─────────────────────────────────────────────────┐

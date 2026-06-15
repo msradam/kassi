@@ -1,0 +1,13 @@
+// Source for the "how a run is driven and governed" text diagram in architecture_diagram.md.
+// Render aligned box-art with Graph::Easy (https://github.com/ironcamel/Graph-Easy):
+//   graph-easy --input=docs/diagrams/run-orchestration.dot --as_boxart
+// (--as_ascii for pure ASCII).
+digraph { graph [rankdir=TB];
+  entry  [label="how a run starts:\ndriver (kassi pilot / Claude Code / MCP client)\nor kassi watch (diff-triggered)"];
+  kassi  [label="kassi: Burr FSM over MCP (Theodosia)\ndriver sees ONE tool: step"];
+  model  [label="writer + auditor model\n(pluggable: 8B or frontier)"];
+  ledger [label="hash-chained ledger\n(every step + refusal)"];
+  entry  -> kassi  [label="step / diff"];
+  kassi  -> model  [label="LLM"];
+  kassi  -> ledger [label="records"];
+}
