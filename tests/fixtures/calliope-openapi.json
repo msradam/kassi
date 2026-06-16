@@ -1,0 +1,397 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Calliope Books",
+    "version": "1.0.0",
+    "description": "Bookstore API with user auth, book catalog, and reviews"
+  },
+  "paths": {
+    "/api/auth/register": {
+      "post": {
+        "summary": "Register",
+        "operationId": "register",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/RegisterRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "User created",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AuthResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/login": {
+      "post": {
+        "summary": "Login",
+        "operationId": "login",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/LoginRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Login successful",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AuthResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/books": {
+      "get": {
+        "summary": "List books",
+        "operationId": "listBooks",
+        "parameters": [
+          { "name": "genre", "in": "query", "schema": { "type": "string" } },
+          { "name": "author", "in": "query", "schema": { "type": "string" } },
+          { "name": "search", "in": "query", "schema": { "type": "string" } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 20 } },
+          { "name": "offset", "in": "query", "schema": { "type": "integer", "default": 0 } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Book list",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/BookListResponse" }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Create book",
+        "operationId": "createBook",
+        "security": [{ "BearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/BookCreate" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Book created",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/BookOut" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/books/{id}": {
+      "get": {
+        "summary": "Get book by ID",
+        "operationId": "getBook",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Book detail with reviews",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/BookOut" }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Update book",
+        "operationId": "updateBook",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/BookCreate" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Book updated",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/BookOut" }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete book",
+        "operationId": "deleteBook",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "responses": {
+          "204": { "description": "Deleted" }
+        }
+      }
+    },
+    "/api/books/search": {
+      "get": {
+        "summary": "Full-text search with N+1 reviews enrichment",
+        "operationId": "searchBooks",
+        "parameters": [
+          { "name": "q", "in": "query", "required": true, "schema": { "type": "string" } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 20 } },
+          { "name": "offset", "in": "query", "schema": { "type": "integer", "default": 0 } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Search results",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/SearchResponse" }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing q parameter",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/books/{id}/reviews": {
+      "get": {
+        "summary": "List reviews for a book",
+        "operationId": "listReviews",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Reviews list",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ReviewListResponse" }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Add a review",
+        "operationId": "createReview",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ReviewCreate" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Review created",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ReviewOut" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/health": {
+      "get": {
+        "summary": "Health check",
+        "operationId": "health",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HealthResponse" }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    },
+    "schemas": {
+      "RegisterRequest": {
+        "type": "object",
+        "required": ["username", "email", "password"],
+        "properties": {
+          "username": { "type": "string" },
+          "email": { "type": "string" },
+          "password": { "type": "string" }
+        }
+      },
+      "LoginRequest": {
+        "type": "object",
+        "required": ["email", "password"],
+        "properties": {
+          "email": { "type": "string" },
+          "password": { "type": "string" }
+        }
+      },
+      "AuthResponse": {
+        "type": "object",
+        "required": ["user", "token"],
+        "properties": {
+          "user": { "$ref": "#/components/schemas/UserOut" },
+          "token": { "type": "string" }
+        }
+      },
+      "UserOut": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "username": { "type": "string" },
+          "email": { "type": "string" }
+        }
+      },
+      "BookCreate": {
+        "type": "object",
+        "required": ["title", "author", "price"],
+        "properties": {
+          "title": { "type": "string" },
+          "author": { "type": "string" },
+          "genre": { "type": "string" },
+          "year": { "type": "integer" },
+          "price": { "type": "number" },
+          "stock": { "type": "integer", "default": 0 }
+        }
+      },
+      "BookOut": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "title": { "type": "string" },
+          "author": { "type": "string" },
+          "genre": { "type": "string" },
+          "year": { "type": "integer" },
+          "price": { "type": "number" },
+          "stock": { "type": "integer" },
+          "created_at": { "type": "string" }
+        }
+      },
+      "BookListResponse": {
+        "type": "object",
+        "properties": {
+          "books": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/BookOut" }
+          }
+        }
+      },
+      "SearchResponse": {
+        "type": "object",
+        "properties": {
+          "results": {
+            "type": "array",
+            "items": {
+              "allOf": [
+                { "$ref": "#/components/schemas/BookOut" },
+                {
+                  "type": "object",
+                  "properties": {
+                    "review_count": { "type": "integer" },
+                    "avg_rating": { "type": "number" },
+                    "recent_reviews": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/ReviewOut" }
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "query": { "type": "string" },
+          "count": { "type": "integer" },
+          "total": { "type": "integer" }
+        }
+      },
+      "ReviewCreate": {
+        "type": "object",
+        "required": ["rating"],
+        "properties": {
+          "rating": { "type": "integer", "minimum": 1, "maximum": 5 },
+          "comment": { "type": "string" }
+        }
+      },
+      "ReviewOut": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "book_id": { "type": "integer" },
+          "user_id": { "type": "integer" },
+          "username": { "type": "string" },
+          "rating": { "type": "integer" },
+          "comment": { "type": "string" },
+          "created_at": { "type": "string" }
+        }
+      },
+      "ReviewListResponse": {
+        "type": "object",
+        "properties": {
+          "reviews": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/ReviewOut" }
+          }
+        }
+      },
+      "HealthResponse": {
+        "type": "object",
+        "properties": {
+          "status": { "type": "string" },
+          "app": { "type": "string" }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "properties": {
+          "error": { "type": "string" }
+        }
+      }
+    }
+  }
+}

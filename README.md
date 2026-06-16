@@ -45,8 +45,8 @@ and correlation) against a live Splunk.
 ## What it does
 
 - **Diff or intent driven.** Reads the changed endpoints from a git diff, or scores an OpenAPI spec against a plain-language intent.
-- **Real load, not a guess.** Generates and runs an actual k6 test through the Grafana k6 MCP server, on top of a deterministic scaffold so a run never fails for lack of a model.
-- **Server-side truth from Splunk.** Correlates the run with windowed SPL through the official Splunk MCP Server, then forecasts the latency band with the Splunk AI Toolkit (`StateSpaceForecast` + `anomalydetection`).
+- **Real load.** Generates and runs an actual k6 test through the Grafana k6 MCP server, on top of a deterministic scaffold so a run never fails for lack of a model.
+- **Server-side truth from Splunk.** Correlates the run with windowed SPL through the official Splunk MCP Server, then runs the Splunk AI Toolkit (`StateSpaceForecast` + `anomalydetection`) to locate the saturation onset statistically. Catches latency degradations that produce zero errors and would slip past any threshold alert.
 - **Root cause and a fix.** Writes a cited analysis and a validated remediation diff that applies cleanly, screened by an independent auditor model before the verdict is sealed.
 - **Audited by construction.** A governed state machine refuses illegal steps; every step and refusal is on a hash-chained ledger that `kassi verify` checks.
 - **Hands-free guard.** `kassi watch` runs the whole workflow when a commit changes an endpoint, catching the regression at commit time.
@@ -60,42 +60,17 @@ and correlation) against a live Splunk.
 uv sync
 ```
 
-kassi delegates all k6 and Splunk work to MCP servers; provide them on the host:
+kassi drives k6 through the [Grafana k6 MCP server](https://github.com/grafana/mcp-k6) and reads
+Splunk through the [official Splunk MCP Server](https://splunkbase.splunk.com/app/7931). Full
+setup: [`docs/SPLUNK_SETUP.md`](docs/SPLUNK_SETUP.md).
 
 ```bash
-# k6 MCP server: install k6 2.0+; the server is the built-in `k6 x mcp` subcommand,
-# provisioned automatically on first use. Warm the extension cache once up front so
-# the first run does not stall while it downloads:
-brew install k6                                     # or see https://k6.io/docs/get-started/installation
-kassi warm-k6
-
-# Standalone binary instead (set KASSI_K6_CMD=mcp-k6):
-#   brew tap grafana/grafana && brew install mcp-k6
-# Docker instead (set KASSI_K6_DOCKER=1):
-#   docker pull grafana/mcp-k6:latest
-
-# Splunk MCP Server: install the app on your Splunk instance, add the
-# mcp_tool_execute capability to your role, generate an encrypted token, and copy
-# the endpoint from the app. The npx-based stdio bridge needs Node.js.
+brew install k6 && kassi warm-k6   # install k6 2.0+; warms the extension cache on first use
+# alternatives: standalone binary (KASSI_K6_CMD=mcp-k6) or Docker (KASSI_K6_DOCKER=1)
 ```
 
-The model authors the k6 script (on top of the deterministic scaffold), writes a cited
-analysis of the result, and narrates the run as a tarot reading; it never writes SPL. The
-backend is pluggable behind one `LLM` interface, selected by `KASSI_LLM`: a local
-[Ollama](https://ollama.com) model (e.g. `granite4.1:8b`, whose chat template natively grounds the
-analysis on the run's evidence documents so the writeup stays to the numbers kassi measured), or a
-frontier model over the **Claude Agent SDK** (`KASSI_LLM=claude_agent`, which uses a logged-in
-Claude Code session rather than an API key). If the backend is unreachable, kassi runs the
-deterministic scaffold and a deterministic analysis, so a run never fails for lack of a model.
-
-The model is pluggable, both for the per-phase work and for *driving* the FSM (`kassi pilot`, or
-any MCP client). The orchestration, the audited Burr graph over MCP, is model-neutral, so the
-architecture scales **with** the model rather than depending on one: the same harness runs the whole
-loop (drive, write, audit) on a local 8B with no cloud dependency, and scales up to a frontier model
-unchanged.
-
-The Splunk step is optional: without `KASSI_SPLUNK_MCP_ENDPOINT` + `KASSI_SPLUNK_TOKEN`
-set, kassi skips correlation and runs k6-only.
+The Splunk step is optional: without `KASSI_SPLUNK_MCP_ENDPOINT` + `KASSI_SPLUNK_TOKEN`, kassi
+skips correlation and runs k6-only. Model backend: see [Configuration](#configuration).
 
 ## Quickstart
 
@@ -115,19 +90,6 @@ Splunk, writes the grounded analysis):
 uv run python scripts/verify_scenario.py petclinic   # or storefront | feed | gateway | orders
 ```
 
-## Design
-
-The current scope is deliberately tight: kassi does one job end to end (take a change, exercise it
-under load, find what broke, and propose the fix) rather than handing a frontier model a pile of
-tools and broad autonomy. The work runs in deterministic phases: the two MCP servers generate and
-run the load and read the telemetry back, and plain Python composes the SPL and the verdict. The
-model is used only where judgment helps (authoring the script, writing the grounded analysis,
-proposing the diff), never to carry the workflow itself. That gated shape is what makes the loop
-auditable, reproducible, and measurable against ground truth (see the [benchmark](#benchmark)
-below). It is built to grow from there: the state machine takes more phases and subgraphs, more MCP
-servers plug in as upstreams, and the gating and audit guarantees hold as the workflow expands.
-kassi is a functional prototype of that larger pattern, proven end to end on one real ops problem.
-
 ## Usage
 
 Inspect and serve the workflow:
@@ -138,10 +100,10 @@ kassi render               # print the state machine
 kassi serve                # mount as an MCP server over stdio (both upstreams wired in)
 ```
 
-Drive it locally, no cloud agent. `kassi pilot` lets a local open model
-drive the FSM step by step: it reads the reachable actions and calls `step` for each phase
-itself, doing the per-phase work as it goes (the `screen` phase hands off to an independent auditor).
-Driver, writer, and auditor are all the local model:
+Drive it locally, no cloud agent. `kassi pilot` lets a local open model drive the FSM step by step:
+it reads the reachable actions and calls `step` for each phase itself, doing the per-phase work as it
+goes (the `screen` phase hands off to an independent auditor). Driver, writer, and auditor are all
+the local model:
 
 ```bash
 kassi pilot --intent "load test the pet listing endpoint" \
@@ -151,8 +113,7 @@ kassi pilot --intent "load test the pet listing endpoint" \
 
 Run it in the background, triggered on diff detection. `kassi watch` polls a repo's git HEAD and,
 when a new commit changes an HTTP endpoint, drives the whole workflow in diff mode against that
-change, then prints the verdict and a proposed fix and publishes the run to Splunk, hands-free: a
-change comes in, a verdict goes out, so the regression is caught at commit time, not at 2am.
+change, then prints the verdict and a proposed fix and publishes the run to Splunk:
 
 ```bash
 kassi watch --repo-path /path/to/repo --target-base-url http://localhost:8000 --splunk-index web
@@ -240,61 +201,17 @@ stateDiagram-v2
 
 (generated by `kassi render --mermaid`)
 
-- `doc_lookup` consults the k6 MCP documentation tools (`list_sections` +
-  `get_documentation`) for the constructs kassi emits (HTTP requests, thresholds,
-  checks, scenarios) and records version-grounded citations. It is non-blocking:
-  generation proceeds even if the docs are unavailable.
-- `scaffold` composes a deterministic, self-contained k6 baseline from the OpenAPI
-  schema (per-endpoint requests with sample bodies, the baked base URL, load options).
-  No model. A single file is required: the k6 MCP runs one script string and cannot
-  resolve local imports, so kassi emits plain `k6/http` calls. This scaffold is the
-  known-good fallback.
-- `generate_script` has the model author the final script on top of the scaffold,
-  guided by k6's own `generate_script` MCP prompt and `best_practices` resource.
-- `validate_script` gates the script at the k6 MCP `validate_script` tool. On failure it
-  routes to `fix_script`, an explicit correction loop in the state machine: `fix_script`
-  repairs the script from the real k6 error (stderr + the server's structured issues and
-  suggestions) and loops back to validation. The loop is bounded by `MAX_FIX_ATTEMPTS`;
-  on give-up it runs the deterministic scaffold rather than fail. So an unvalidated script
-  never reaches `run_test`.
-- `run_test` executes the validated script via the k6 MCP `run_script` tool (passing VUs
-  and duration, which the tool needs since it ignores the script's own options) and
-  records the wall-clock test window.
-- `splunk_preflight` verifies the target index exists and captures its event count,
-  sourcetypes, and the Splunk version (`splunk_get_info` / `splunk_get_index_info` /
-  `splunk_get_metadata`) before correlating. It catches the "wrong index, zero rows"
-  failure early and is non-blocking.
-- `correlate` runs four windowed SPL queries through the Splunk MCP `splunk_run_query`
-  tool to answer what k6 client-side cannot: a rollup (overview), a timeline (when it
-  degraded), a by-endpoint breakdown (which route degraded), and the dominant server-side
-  error (why). It synthesizes the actionable findings, so the run can say "POST /api/visits
-  regressed: 59% 5xx, p95 318ms vs 2ms baseline, cause 'database is locked'", which the k6
-  summary alone never shows. Override the rollup per run with `splunk_spl`.
-- `detect_anomalies` runs Splunk's own ML over the same window through the same
-  `splunk_run_query` tool: the **AI Toolkit's `StateSpaceForecast`** algorithm forecasts the
-  latency band (falling back to the core `predict` command when the toolkit's Python for
-  Scientific Computing add-on is absent) and `anomalydetection` flags statistically outlying
-  buckets. The saturation onset is found by Splunk's ML, not by a fixed threshold in kassi,
-  and the forecast band and anomalous buckets fold into the verdict. Non-blocking, like the
-  other Splunk phases.
-- `analyze` is the **writer** phase: the model produces, from the recorded facts, a practical
-  **analysis** (summary, affected endpoints, root cause, evidence with a source citation per
-  fact, and a recommendation), grounded on the evidence documents so it stays to the measured
-  numbers; and, in diff mode, a **proposed remediation** (a minimal unified diff that fixes the
-  root cause, written from the diff that introduced it) for human review. Both fall back to
-  deterministic text when the model is absent.
-- `screen` is the **auditor** phase: a separate **independent auditor model** (Granite Guardian
-  with the local backend, or the frontier model in audit mode) judges whether the analysis is
-  grounded in the evidence it cites (any claim unsupported by or contradicting the telemetry), and
-  the pass/fail is sealed to the report. The writer is checked by a second model, not trusted on its
-  own word. Non-blocking: skipped when the auditor is off.
-- `report` assembles the combined client plus server verdict and the tarot **narration** (one
-  line per phase, deterministic omens when the model is absent). Every upstream tool call is
-  logged to `mcp_provenance`. The run is published to Splunk twice over: a `kassi:run` summary,
-  and the agent's own **state-machine walk** as one `kassi:step` event per phase (keyed by Burr's
-  `app_id`), so the dashboard shows not just what the change did but how the agent reached the
-  verdict. The model authors only the script, the analysis, the remediation, and the narration,
-  never the SPL.
+- `doc_lookup` — consults the k6 MCP documentation tools and records version-grounded citations. Non-blocking; generation proceeds if the docs are unavailable.
+- `scaffold` — composes a deterministic, self-contained k6 baseline from the OpenAPI schema (per-endpoint requests with sample bodies, baked base URL, load options). No model. This scaffold is the known-good fallback.
+- `generate_script` — the model authors the final script on top of the scaffold, guided by k6's own `generate_script` MCP prompt and `best_practices` resource.
+- `validate_script` — gates the script at `k6.validate_script`. Failures route to `fix_script`, which repairs the script from the real k6 error (stderr + the server's structured issues and suggestions) and loops back. Bounded by `MAX_FIX_ATTEMPTS`; gives up cleanly to the scaffold so an unvalidated script never reaches `run_test`.
+- `run_test` — executes the validated script via `k6.run_script` and records the wall-clock test window.
+- `splunk_preflight` — checks the target index exists, capturing event count, sourcetypes, and Splunk version before correlating. Catches the wrong-index failure early. Non-blocking.
+- `correlate` — four windowed SPL queries (rollup, timeline, by-endpoint, dominant error) synthesize client-vs-server findings: which route degraded and why. Answers what the k6 summary alone cannot show.
+- `detect_anomalies` — the AI Toolkit's `StateSpaceForecast` forecasts the latency band (falling back to `predict` when the add-on is absent) and `anomalydetection` flags outlying buckets. The saturation onset is found by Splunk's ML, not a fixed threshold. Non-blocking.
+- `analyze` — the writer model produces a grounded analysis (root cause, evidence with source citations, recommendation) and, in diff mode, a proposed remediation diff that applies cleanly. Both fall back to deterministic text when no model is available.
+- `screen` — an independent auditor model checks every claim in the analysis against the cited telemetry. The pass/fail is sealed to the report. Non-blocking.
+- `report` — assembles the combined client-plus-server verdict, seals it to the ledger, and publishes the run and the agent's state-machine walk to Splunk over HEC.
 
 ## The Major Arcana
 
@@ -393,7 +310,7 @@ Run any of them end-to-end (starts the app, real k6, live Splunk, the grounded a
 uv run python scripts/verify_scenario.py feed   # or petclinic | storefront | gateway | orders
 ```
 
-`petclinic` is also the headline diff-mode run below.
+`petclinic` is also the headline diff-mode run above.
 
 ## Benchmark
 

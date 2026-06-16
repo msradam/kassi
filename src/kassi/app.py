@@ -130,20 +130,30 @@ async def read_diff(state: State) -> State:
     return state.update(diff_text=diff, stage="diffed", error=None)
 
 
-@action(reads=["diff_text", "repo_path"], writes=["endpoints", "openapi_spec", "stage"])
+@action(reads=["diff_text", "repo_path"], writes=["endpoints", "openapi_spec", "graphrag_context", "stage"])
 async def extract_endpoints(state: State) -> State:
     """Pull changed routes from the diff and load the sibling openapi.json."""
     endpoints = parse.extract_endpoints_from_diff(state["diff_text"] or "")
     spec = _load_spec(state["repo_path"])
-    log.info("extract_endpoints_ok", count=len(endpoints), has_spec=spec is not None)
+    graphrag_context = parse.retrieve_context(spec, endpoints)
+    log.info(
+        "extract_endpoints_ok",
+        count=len(endpoints),
+        has_spec=spec is not None,
+        has_context=graphrag_context is not None,
+    )
     return state.update(
         endpoints=[ep.model_dump() for ep in endpoints],
         openapi_spec=spec,
+        graphrag_context=graphrag_context,
         stage="scoped",
     )
 
 
-@action(reads=["user_intent", "repo_path"], writes=["endpoints", "openapi_spec", "stage", "error"])
+@action(
+    reads=["user_intent", "repo_path"],
+    writes=["endpoints", "openapi_spec", "graphrag_context", "stage", "error"],
+)
 async def parse_intent(state: State) -> State:
     """Score OpenAPI operations against the natural-language intent and pick the top matches."""
     spec = _load_spec(state["repo_path"])
@@ -151,14 +161,17 @@ async def parse_intent(state: State) -> State:
         return state.update(
             endpoints=[],
             openapi_spec=None,
+            graphrag_context=None,
             stage="failed",
             error=f"parse_intent: no readable openapi.json under {state['repo_path']!r}",
         )
     endpoints = parse.score_intent(spec, state["user_intent"] or "")
-    log.info("parse_intent_ok", matched=len(endpoints))
+    graphrag_context = parse.retrieve_context(spec, endpoints)
+    log.info("parse_intent_ok", matched=len(endpoints), has_context=graphrag_context is not None)
     return state.update(
         endpoints=[ep.model_dump() for ep in endpoints],
         openapi_spec=spec,
+        graphrag_context=graphrag_context,
         stage="scoped",
         error=None,
     )
@@ -210,14 +223,16 @@ async def scaffold(state: State) -> State:
 
 
 @action(
-    reads=["scaffold_script", "endpoints", "user_intent", "mcp_calls"],
+    reads=["scaffold_script", "endpoints", "user_intent", "mcp_calls", "graphrag_context"],
     writes=["generated_script", "stage", "mcp_calls"],
 )
 async def generate_script(state: State) -> State:
     """Author the final k6 script on top of the scaffold, using k6's own `generate_script` MCP prompt and best-practices to guide the model. Falls back to the scaffold when the model or guidance is unavailable; validation failures are repaired by the fix_script phase."""
     scaffold_script = state["scaffold_script"]
     endpoints = [Endpoint(**e) for e in state["endpoints"]]
-    description = parse.build_generation_description(endpoints, state["user_intent"], scaffold_script)
+    description = parse.build_generation_description(
+        endpoints, state["user_intent"], scaffold_script, schema_context=state.get("graphrag_context")
+    )
     calls = state["mcp_calls"]
 
     guidance = await fetch_k6_generation_guidance(description)
@@ -997,6 +1012,7 @@ def build_application(hooks=None):
             diff_text=None,
             endpoints=[],
             openapi_spec=None,
+            graphrag_context=None,
             doc_refs=[],
             plan=None,
             scaffold_script=None,

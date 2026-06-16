@@ -64,10 +64,21 @@ async def main() -> None:
         print("Splunk is not configured in .env (KASSI_SPLUNK_MCP_ENDPOINT + TOKEN). Aborting.")
         return
 
+    # Ensure Homebrew binaries (k6, npx) are on PATH even in non-interactive shells.
+    _homebrew = "/opt/homebrew/bin"
+    _cur_path = os.environ.get("PATH", "")
+    if _homebrew not in _cur_path.split(":"):
+        os.environ["PATH"] = f"{_homebrew}:{_cur_path}"
+
     app_env = {**os.environ, "SPLUNK_INDEX": "web"}
     app_env.setdefault("KASSI_SPLUNK_INSECURE", "1")
+    # Always use the SSH reverse tunnels for HEC and management so the example app
+    # has a stable loopback path regardless of the direct-LAN IP set in .env.
+    app_env["SPLUNK_HEC"] = "http://127.0.0.1:18088"
+    app_env["SPLUNK_MGMT"] = "https://127.0.0.1:18089"
+    _uv = os.environ.get("UV", "uv")
     app = subprocess.Popen(
-        ["uv", "run", "--with", "fastapi", "--with", "uvicorn", "--with", "httpx",
+        [_uv, "run", "--with", "fastapi", "--with", "uvicorn", "--with", "httpx",
          "python", str(app_dir / "app.py"), "serve"],
         cwd=str(ROOT),
         env=app_env,

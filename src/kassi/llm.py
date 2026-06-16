@@ -264,8 +264,20 @@ class ClaudeAgentLLM:
             query,
         )
 
+        # Prefix prevents the claude subprocess from acting on any tool-use
+        # instructions embedded in the system prompt (e.g. from k6's generate_script
+        # guidance, which tells Claude to call list_sections, write files, etc.).
+        # ClaudeAgentLLM is used exclusively for one-shot text completion; built-in
+        # tools (Write, Bash, etc.) are available via bypassPermissions but must not
+        # be invoked here.
+        _NO_TOOLS_PREFIX = (
+            "IMPORTANT: You are in text-completion mode. No tools are available "
+            "to you in this context. Respond with a single text message containing "
+            "only the requested content. Do not attempt any tool calls, file "
+            "operations, shell commands, or external requests.\n\n"
+        )
         options = ClaudeAgentOptions(
-            system_prompt=system,
+            system_prompt=_NO_TOOLS_PREFIX + system,
             allowed_tools=[],
             max_turns=1,
             model=self.model,

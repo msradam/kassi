@@ -36,7 +36,40 @@ def extract_endpoints_from_diff(diff_text: str) -> list[Endpoint]:
 
 
 def score_intent(spec: dict, intent: str) -> list[Endpoint]:
-    """Score each operation by token overlap with the intent; top 3, else all."""
+    """Find endpoints relevant to the intent using the OpenAPI graph; falls back to token overlap."""
+    try:
+        from kassi.graphrag import OpenAPIGraph, SubgraphRetriever  # noqa: F401
+
+        graph = OpenAPIGraph.from_spec(spec)
+        G = graph.graph
+        intent_lc = intent.lower()
+        scored: list[tuple[int, str]] = []
+
+        for ep_id in graph.endpoints():
+            data = G.nodes[ep_id]
+            path = data.get("path", "")
+            summary = data.get("summary", "").lower()
+            tokens = [t for t in path.lower().split("/") if t and not t.startswith("{") and len(t) > 2]
+            path_score = sum(1 for t in tokens if t in intent_lc)
+            summary_score = sum(1 for w in summary.split() if len(w) > 3 and w in intent_lc)
+            score = path_score + summary_score
+            if score > 0:
+                scored.append((score, ep_id))
+
+        if scored:
+            scored.sort(key=lambda x: x[0], reverse=True)
+            top = [ep_id for _, ep_id in scored[:3]]
+        else:
+            top = graph.endpoints()
+
+        return [Endpoint(method=G.nodes[ep]["method"], path=G.nodes[ep]["path"]) for ep in top]
+
+    except Exception:
+        return _score_intent_fallback(spec, intent)
+
+
+def _score_intent_fallback(spec: dict, intent: str) -> list[Endpoint]:
+    """Token overlap fallback when the OpenAPI graph cannot be built."""
     intent_lc = intent.lower()
     scored: list[tuple[int, Endpoint]] = []
     paths = spec.get("paths", {}) or {}
@@ -64,6 +97,23 @@ def score_intent(spec: dict, intent: str) -> list[Endpoint]:
         for method in ops
         if method.upper() in _HTTP_METHODS
     ]
+
+
+def retrieve_context(spec: dict | None, endpoints: list[Endpoint]) -> str | None:
+    """Return GraphRAG schema context for the given endpoints as compact text, or None."""
+    if not spec or not endpoints:
+        return None
+    try:
+        from kassi.graphrag import OpenAPIGraph, SubgraphRetriever
+
+        graph = OpenAPIGraph.from_spec(spec)
+        retriever = SubgraphRetriever(graph)
+        ep_ids = [f"{ep.method} {ep.path}" for ep in endpoints]
+        context = retriever.for_endpoints(ep_ids)
+        text = context.to_text()
+        return text or None
+    except Exception:
+        return None
 
 
 def build_correlation_spl(index: str, earliest: float, latest: float) -> str:
@@ -233,7 +283,11 @@ def extract_script(raw: Any) -> str:
 
 
 def build_generation_description(
-    endpoints: list[Endpoint], intent: str | None, scaffold: str, validation_error: str | None = None
+    endpoints: list[Endpoint],
+    intent: str | None,
+    scaffold: str,
+    validation_error: str | None = None,
+    schema_context: str | None = None,
 ) -> str:
     """Compose the request handed to k6's generate_script prompt and the model."""
     eps = "\n".join(f"  - {ep.method} {ep.path}" for ep in endpoints)
@@ -241,6 +295,10 @@ def build_generation_description(
     if intent:
         parts.append(f"Intent: {intent}")
     parts.append("Target endpoints:\n" + eps)
+    if schema_context:
+        parts.append(
+            "API schema context (request/response types for the tested endpoints):\n" + schema_context
+        )
     parts.append(
         "Build on this deterministic scaffold. Keep it a single self-contained file with "
         "plain k6/http calls and no local imports. Use minimal think time (no sleep, or at "

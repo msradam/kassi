@@ -42,8 +42,8 @@ propose a fix.
 
 ## Inspiration
 
-Roughly 80% of production outages are self-inflicted: Gartner attributes them to people and
-process, not technology, and change is the single biggest cause, which is why
+Roughly 80% of production outages trace back to a change: a deploy, a config push, a dependency
+bump. Change is the single biggest cause, which is why
 [change failure rate](https://dora.dev/guides/dora-metrics-four-keys/) is one of the four DORA
 metrics. Every engineer has been Cassandra about a deploy: you sensed it was risky, you couldn't
 prove it, it shipped, and it took down prod at 2am.
@@ -182,7 +182,8 @@ false alarms.**
   [WWW'25](https://arxiv.org/abs/2412.17015)): on 57 Online Boutique and Train Ticket
   cases, kassi localizes the root-cause service at top-1 in **81%** of cases and within top-3 in
   **100%**, competitive with the strongest published methods and well ahead of the classical
-  baselines.
+  baselines. This suite tests kassi's correlation engine against pre-recorded trace data projected
+  into Splunk, not the full live k6 pipeline; kassi-bench covers that.
 - **[go-httpbin](https://github.com/mccutchen/go-httpbin)** (a third-party app kassi never
   instrumented, observed through a generic access-log proxy): **15/15.** It called the erroring endpoint a regression, the slow one a degradation, and
   stayed silent on the healthy control.
@@ -205,3 +206,9 @@ with one command. Detail in [docs/benchmark/BENCHMARK.md](docs/benchmark/BENCHMA
   intent-driven correlation queries.
 - Richer synthetic load: schema-aware request synthesis, realistic traffic mixes, seeded faults.
 - Extend the RCAEval run past RE3 and grow kassi-bench past five fault classes.
+
+## Post-deadline additions
+
+One feature present in the repository was not complete at the submission deadline and is noted here for transparency:
+
+**OpenAPI graph context (GraphRAG).** The `kassi.graphrag` module, which builds a typed graph of the OpenAPI spec and retrieves a schema subgraph around the tested endpoints to ground k6 script generation, was in-progress at deadline. The endpoint-scoring logic in `score_intent` and the `retrieve_context` helper that pass schema context into the generation prompt were sketched but not wired through. Both were completed and integrated after the deadline. The core workflow, including endpoint extraction from a diff, k6 script generation from the scaffold, live Splunk correlation, and the anomaly scan, ran without this module at submission time and continues to degrade gracefully to the same code path when the module is absent.
